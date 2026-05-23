@@ -4709,7 +4709,6 @@ local EmbeddedModules = {
 						end
 						azurionSignals.Selection:Fire(objects)
 					end
-					print(#t, t, t[1].Obj)
 					self.Changed:Fire()
 				end
 
