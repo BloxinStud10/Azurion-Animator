@@ -8,7 +8,7 @@ return {
 	Compress = function(data: string?, level: number?)
 		data = typeof(data) == "string" and buffer.fromstring(data) or data
 		local compressed = EncodingService:CompressBuffer(data, Algorithm, level or 1)
-		return buffer.tostring(encoded)
+		return buffer.tostring(compressed)
 	end,
 	Decompress = function(data: string?)
 		data = typeof(data) == "string" and buffer.fromstring(data) or data
