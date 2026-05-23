@@ -4714,7 +4714,7 @@ local EmbeddedModules = {
 						end
 						local azurionSignals = cenv.azurionSignals
 						if azurionSignals and azurionSignals.Selection then
-							azurionSignals.Selection:Fire(obj.Obj)
+							azurionSignals.Selection:Fire(objects)
 						end
 					end
 					self.Changed:Fire()
