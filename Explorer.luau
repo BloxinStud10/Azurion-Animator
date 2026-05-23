@@ -45,7 +45,9 @@ local cloneref = cloneref or function(ref)
 end
 
 local whitelistedServices = {"Workspace", "Players", "ReplicatedStorage", "ReplicatedFirst", "StarterGui", "StarterPlayer", "SoundService", "Lighting"}
-local azurionSignals = azurionSignals
+
+local env = (getfenv and getfenv()) or _G
+local cenv = env.Azurion
 
 local service = setmetatable({}, {
 	__index = function(self, name)
@@ -4689,8 +4691,11 @@ local EmbeddedModules = {
 
 					self.List = {obj}
 					self.Map = {[obj] = true}
-					if isAzurion then
-						azurionSignals.Selection:Fire(obj.Obj)
+					if cenv then
+						local azurionSignals = cenv.azurionSignals
+						if azurionSignals and azurionSignals.Selection then
+							azurionSignals.Selection:Fire(obj.Obj)
+						end
 					end
 					self.Changed:Fire()
 				end
@@ -4702,12 +4707,15 @@ local EmbeddedModules = {
 					for i = 1,#t do
 						newMap[t[i]] = true
 					end
-					if isAzurion then
+					if cenv then
 						local objects = {}
 						for _,v in next,t do
 							table.insert(objects, v.Obj)
 						end
-						azurionSignals.Selection:Fire(objects)
+						local azurionSignals = cenv.azurionSignals
+						if azurionSignals and azurionSignals.Selection then
+							azurionSignals.Selection:Fire(obj.Obj)
+						end
 					end
 					self.Changed:Fire()
 				end
