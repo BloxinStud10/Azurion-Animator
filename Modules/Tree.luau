@@ -95,6 +95,7 @@ function Tree.new<T>(root: T, cfg: Config<T>?)
 	local config = resolveConfig(cfg)
 	self._cfg = config
 
+	-- Decide key + parent strategies
 	local getKey = config.GetKey or defaultKey
 	local getParent = config.GetParent or instanceParent
 
@@ -137,6 +138,7 @@ function Tree:CreateNode<T>(value: T): Node<T>?
 
 	local key = getKey(value)
 
+	-- Don't double-register
 	if self.Nodes[key] then
 		return self.Nodes[key]
 	end
@@ -347,6 +349,29 @@ function Tree:Flatten<T>(): { Node<T> }
 	end
 
 	return visible
+end
+
+function Tree:FlattenAll<T>(): { Node<T> }
+    local result = {}
+    local count = 0
+    local stack = {self.RootNode}
+    local size = 1
+
+    while size > 0 do
+        local node = stack[size]
+        stack[size] = nil
+        size -= 1
+
+        count += 1
+        result[count] = node
+
+        for i = #node.Children, 1, -1 do
+            size += 1
+            stack[size] = node.Children[i]
+        end
+    end
+
+    return result
 end
 
 return Tree
