@@ -95,7 +95,6 @@ function Tree.new<T>(root: T, cfg: Config<T>?)
 	local config = resolveConfig(cfg)
 	self._cfg = config
 
-	-- Decide key + parent strategies
 	local getKey = config.GetKey or defaultKey
 	local getParent = config.GetParent or instanceParent
 
@@ -138,7 +137,6 @@ function Tree:CreateNode<T>(value: T): Node<T>?
 
 	local key = getKey(value)
 
-	-- Don't double-register
 	if self.Nodes[key] then
 		return self.Nodes[key]
 	end
