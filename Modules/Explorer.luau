@@ -11,40 +11,9 @@
 
 local nodes = {}
 local selection
-local cloneref = cloneref or function(ref)
-	if not getreg then return ref end
-	
-	local InstanceList
-	
-	local a = Instance.new("Part")
-	for _, c in pairs(getreg()) do
-		if type(c) == "table" and #c then
-			if rawget(c, "__mode") == "kvs" then
-				for d, e in pairs(c) do
-					if e == a then
-						InstanceList = c
-						break
-					end
-				end
-			end
-		end
-	end
-	local f = {}
-	function f.invalidate(g)
-		if not InstanceList then
-			return
-		end
-		for b, c in pairs(InstanceList) do
-			if c == g then
-				InstanceList[b] = nil
-				return g
-			end
-		end
-	end
-	return f.invalidate
-end
+local cloneref = cloneref or function(...) return ... end
 
-local whitelistedServices = {"Workspace", "Players", "ReplicatedStorage", "ReplicatedFirst", "StarterGui", "StarterPlayer", "SoundService", "Lighting"}
+local whitelistedServices = {"Workspace", "Players", "ReplicatedStorage", "ReplicatedFirst", "SoundService", "Lighting"}
 
 local env = (getfenv and getfenv()) or _G
 local cenv = env.Azurion
@@ -106,6 +75,7 @@ local EmbeddedModules = {
 			local entryTemplate,treeFrame,toolBar,descendantAddedCon,descendantRemovingCon,itemChangedCon
 			local ffa = game.FindFirstAncestorWhichIsA
 			local getDescendants = game.GetDescendants
+			local queryDescendants = game.QueryDescendants
 			local getTextSize = service.TextService.GetTextSize
 			local updateDebounce,refreshDebounce = false,false
 			local nilNode = {Obj = Instance.new("Folder")}
@@ -119,7 +89,7 @@ local EmbeddedModules = {
 			local addObject,removeObject,moveObject = nil,nil,nil
 
 			addObject = function(root)
-				if nodes[root] then return end
+				if (nodes[root] or root:IsA("LuaSourceContainer")) then return end
 
 				local isNil = false
 				local rootParObj = ffa(root,"Instance")
@@ -182,7 +152,7 @@ local EmbeddedModules = {
 					par.Sorted = nil
 				end
 
-				local insts = getDescendants(root)
+				local insts = queryDescendants(root, ":not(LuaSourceContainer)")
 				for i = 1,#insts do
 					local obj = insts[i]
 					if nodes[obj] then continue end -- Deferred
@@ -1628,6 +1598,8 @@ local EmbeddedModules = {
 			end
 
 			Explorer._SearchFilters = {} do
+				local match = string.match
+				
 				local Filters = Explorer._SearchFilters
 
 				local function NewFilter(list, func)
@@ -1645,7 +1617,30 @@ local EmbeddedModules = {
 				NewFilter({"parent", "p"}, function(Obj, str) return Obj.Parent and (Obj.Parent.Name:lower()):find(str) end)
 				NewFilter({"class", "c"}, function(Obj, str) return (Obj.ClassName:lower()):find(str) end)
 				NewFilter({"isa", "i"}, function(Obj, str) return Obj:IsA(str) end)
+				NewFilter({"prop", "p"}, function(obj, str)
+					local property, value = match(str, "^([^=]+)=(.+)$")
+					if not property then
+						return false
+					end
 
+					local ok, propValue = pcall(function()
+						return obj[property]
+					end)
+
+					if not ok then
+						return false
+					end
+
+					if value == "true" then
+						value = true
+					elseif value == "false" then
+						value = false
+					elseif tonumber(value) then
+						value = tonumber(value)
+					end
+
+					return propValue == value
+				end)
 				NewFilter({"only", "o"}, function(Obj, str)
 					local Special = Only[str]
 					return Special and table.find(Special, Obj.ClassName)
@@ -2147,8 +2142,8 @@ local EmbeddedModules = {
 				end
 
 				Explorer.SetupConnections()
-
-				local insts = getDescendants(game)
+				
+				local insts = queryDescendants(game, ":not(LuaSourceContainer)")
 				if Main.Elevated then
 					for i = 1,#insts do
 						local obj = insts[i]
