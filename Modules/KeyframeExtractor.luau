@@ -2,10 +2,16 @@
 
 local next = next
 local assert = assert
+local Enum = Enum
 local table_insert = table.insert
 local table_clear = table.clear
 local table_unpack = table.unpack
 local table_sort = table.sort
+
+local PoseEasingStyle = Enum.PoseEasingStyle
+local PoseEasingDirection = Enum.PoseEasingDirection
+local PoseEasingStyleLinear = PoseEasingStyle.Linear
+local PoseEasingDirectionIn = PoseEasingDirection.In
 
 local AnimationDatas = {}
 
@@ -85,13 +91,22 @@ return function(Name, Sequence)
 			local Part1Name = Pose.Name
 			local Part0Name = (ParentPose:IsA("Pose") and ParentPose.Name) or nil
 			
-			table_insert(KeyframeData.Poses, {
+			local EasingStyle, EasingDirection = Pose.EasingStyle, Pose.EasingDirection
+			
+			local PoseTable = {
 				Part0 = Part0Name,
 				Part1 = Part1Name,
-				EasingStyle = Pose.EasingStyle.Name,
-				EasingDirection = Pose.EasingDirection.Name,
 				CFrame = Pose.CFrame
-			})
+			}
+			
+			if EasingStyle.Name == PoseEasingStyleLinear then
+				PoseTable.EasingStyle = EasingStyle.Name
+			end
+			if EasingDirection == PoseEasingDirectionIn then
+				PoseTable.EasingDirection = EasingDirection.Name
+			end
+			
+			table_insert(KeyframeData.Poses, PoseTable)
 		end
 		
 		table_sort(AnimationData.Keyframes, function(a, b)
@@ -145,9 +160,7 @@ return function(Name, Sequence)
 				local PoseData = {
 					Part0 = Part0Name,
 					Part1 = Part1Name,
-					CFrame = Rotation + Position,
-					EasingStyle = "Linear",
-					EasingDirection = "In"
+					CFrame = Rotation + Position
 				}
 				
 				table_insert(Keyframe.Poses, PoseData)
