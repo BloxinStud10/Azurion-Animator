@@ -4712,10 +4712,10 @@ local EmbeddedModules = {
 					local SelectionSignal = getSignal("Selection")
 					if SelectionSignal then
 						local objects = {}
-						for _,v in next,t do
+						for _,v in next, t do
 							table.insert(objects, v.Obj)
 						end
-						SelectionSignal:Fire(obj.Obj)
+						SelectionSignal:Fire(objects)
 					end
 					self.Changed:Fire()
 				end
