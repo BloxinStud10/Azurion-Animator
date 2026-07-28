@@ -43,6 +43,8 @@ local vector_zero = vector.zero
 local vector_one = vector.one
 local CFrame_identity = CFrame.identity
 
+local TIP_FLIP_CF = CFrame.new(0, 0, -0.45) * CFrame.fromEulerAngles(3.141592653589793, 0, 0)
+
 local MouseButton1 = Enum.UserInputType.MouseButton1
 local Touch = Enum.UserInputType.Touch
 local MouseMovement = Enum.UserInputType.MouseMovement
@@ -86,7 +88,7 @@ local isAllowedClass = function(instance)
 	if not instance then
 		return
 	end
-	
+
 	if instance:IsA("BasePart") then
 		return "BasePart"
 	elseif instance:IsA("PVInstance") then
@@ -136,6 +138,30 @@ local getAdorneeCFrame = function(adornee, class)
 		end
 	elseif class == "Attachment" or class == "Bone" then
 		return adornee.WorldCFrame
+	end
+end
+
+local applyCFrame = function(adornee, class, newCF)
+	if class == "BasePart" then
+		adornee.CFrame = newCF
+	elseif class == "PVInstance" then
+		adornee:PivotTo(newCF)
+	elseif class == "Motor6D" then
+		adornee.Transform = adornee.C0:Inverse() * adornee.Part0.CFrame:ToObjectSpace(newCF)
+	elseif class == "Joint" then
+		adornee.C0 = adornee.Part0.CFrame:ToObjectSpace(newCF)
+	elseif class == "AnimationConstraint" then
+		adornee.Transform = adornee.C0:Inverse() * adornee.Attachment0.WorldCFrame:ToObjectSpace(newCF)
+	elseif class == "Attachment" then
+		adornee.CFrame = adornee.Parent.CFrame:ToObjectSpace(newCF)
+	elseif class == "Bone" then
+		local parentWorld
+		if adornee.Parent:IsA("Bone") then
+			parentWorld = adornee.Parent.WorldCFrame
+		else
+			parentWorld = adornee.Parent.CFrame
+		end
+		adornee.Transform = adornee.CFrame:Inverse() * parentWorld:ToObjectSpace(newCF)
 	end
 end
 
@@ -190,19 +216,99 @@ local getRadius = function(adornee)
 	return max(size.X, size.Y, size.Z) * 0.65
 end
 
-local axisCFrame = function(dir, offset)
+------------------------------------------------------------------------------------------------------------------------
+-- Multi-Adornee support
+------------------------------------------------------------------------------------------------------------------------
+local normalizeAdornees = function(adornees)
+	if adornees == nil then
+		return {}
+	end
+	if typeof(adornees) == "Instance" then
+		return {adornees}
+	end
+	return adornees
+end
+
+local computeClasses = function(adornees)
+	local classes = {}
+	for i, adornee in next, adornees do
+		classes[i] = isAllowedClass(adornee)
+	end
+	return classes
+end
+
+local getPivotCFrame = function(adornees, classes, primaryIndex, worldSpace)
+	local count = 0
+	local sumPos = vector_zero
+	local cframes = {}
+
+	for i, adornee in next, adornees do
+		local class = classes[i]
+		if adornee and class then
+			local cf = getAdorneeCFrame(adornee, class)
+			if cf then
+				cframes[i] = cf
+				sumPos = sumPos + cf.Position
+				count += 1
+			end
+		end
+	end
+
+	if count == 0 then
+		return nil, cframes, 0
+	end
+
+	local avgPos = sumPos / count
+	local refCFrame = cframes[primaryIndex]
+
+	if count > 1 or worldSpace or not refCFrame then
+		return CFrame_new(avgPos), cframes, count
+	end
+
+	return CFrame_new(avgPos) * (refCFrame - refCFrame.Position), cframes, count
+end
+
+local getGroupAxisOffset = function(adornees, axisDir)
+	local best = 0
+	for _, adornee in next, adornees do
+		if adornee then
+			best = max(best, getAxisOffset(adornee, axisDir))
+		end
+	end
+	return best
+end
+
+local getGroupRadius = function(adornees)
+	local best = 0
+	for _, adornee in next, adornees do
+		if adornee then
+			best = max(best, getRadius(adornee))
+		end
+	end
+	return best
+end
+
+local computeAxisBasis = function(dir)
 	local up = abs(dir.Y) < 0.99 and vector_create(0, 1, 0) or vector_create(1, 0, 0)
-	local look = dir
-	local right = vector_normalize(vector_cross(up, look))
-	local realUp = vector_normalize(vector_cross(look, right))
-	return CFrame_fromMatrix(dir * offset, right, realUp, look)
+	local right = vector_normalize(vector_cross(up, dir))
+	local realUp = vector_normalize(vector_cross(dir, right))
+	return right, realUp
+end
+
+local axisCFrame = function(dir, offset)
+	local right, realUp = computeAxisBasis(dir)
+	return CFrame_fromMatrix(dir * offset, right, realUp, dir)
+end
+
+local axisCFrameFast = function(dir, right, up, offset)
+	return CFrame_fromMatrix(dir * offset, right, up, dir)
 end
 
 local Axes = {
 	{name = "+X", dir = vector_create(1, 0, 0), color = Color3_fromRGB(255, 70, 70)},
 	{name = "+Y", dir = vector_create(0, 1, 0), color = Color3_fromRGB(80, 255, 80)},
 	{name = "+Z", dir = vector_create(0, 0, 1), color = Color3_fromRGB(80, 140, 255)},
-	
+
 	{name = "-X", dir = -vector_create(1, 0, 0), color = Color3_fromRGB(255, 70, 70)},
 	{name = "-Y", dir = -vector_create(0, 1, 0), color = Color3_fromRGB(80, 255, 80)},
 	{name = "-Z", dir = -vector_create(0, 0, 1), color = Color3_fromRGB(80, 140, 255)},
@@ -212,7 +318,7 @@ local RotateAxes = {
 	{name = "+X", dir = vector_create(1, 0, 0), kdir = vector_create(0, 1, 0), color = Color3_fromRGB(255, 70, 70)},
 	{name = "+Y", dir = vector_create(0, 1, 0), kdir = vector_create(0, 0, 1), color = Color3_fromRGB(80, 255, 80)},
 	{name = "+Z", dir = vector_create(0, 0, 1), kdir = vector_create(1, 0, 0), color = Color3_fromRGB(80, 140, 255)},
-	
+
 	{name = "-X", dir = -vector_create(1, 0, 0), kdir = vector_create(0, -1, 0), color = Color3_fromRGB(255, 70, 70)},
 	{name = "-Y", dir = -vector_create(0, 1, 0), kdir = vector_create(0, 0, -1), color = Color3_fromRGB(80, 255, 80)},
 	{name = "-Z", dir = -vector_create(0, 0, 1), kdir = vector_create(-1, 0, 0), color = Color3_fromRGB(80, 140, 255)},
@@ -222,11 +328,22 @@ local ResizeAxes = {
 	{name = "+X", dir = vector_create(1, 0, 0)},
 	{name = "+Y", dir = vector_create(0, 1, 0)},
 	{name = "+Z", dir = vector_create(0, 0, 1)},
-	
+
 	{name = "-X", dir = -vector_create(1, 0, 0)},
 	{name = "-Y", dir = -vector_create(0, 1, 0)},
 	{name = "-Z", dir = -vector_create(0, 0, 1)},
 }
+
+for _, axis in next, Axes do
+	axis.right, axis.up = computeAxisBasis(axis.dir)
+end
+for _, axis in next, RotateAxes do
+	axis.right, axis.up = computeAxisBasis(axis.dir)
+	axis.kright, axis.kup = computeAxisBasis(axis.kdir)
+end
+for _, axis in next, ResizeAxes do
+	axis.right, axis.up = computeAxisBasis(axis.dir)
+end
 
 local mouseRay = function()
 	local loc = UserInputService:GetMouseLocation()
@@ -282,6 +399,25 @@ local inputChangedConn = nil
 local inputBeganConn = nil
 local inputEndedConn = nil
 
+local function rayHitBoxAxis(o, d, h, tMin, tMax)
+	if abs(d) < 1e-8 then
+		if o < -h or o > h then
+			return nil, nil
+		end
+		return tMin, tMax
+	end
+
+	local t1 = (-h - o) / d
+	local t2 = (h - o) / d
+	if t1 > t2 then t1, t2 = t2, t1 end
+	tMin = max(tMin, t1)
+	tMax = min(tMax, t2)
+	if tMin > tMax then
+		return nil, nil
+	end
+	return tMin, tMax
+end
+
 local rayHitBox = function(rayOrigin, rayDir, boxCFrame, boxSize)
 	local relOrigin = boxCFrame:PointToObjectSpace(rayOrigin)
 	local relDir = boxCFrame:VectorToObjectSpace(rayDir)
@@ -289,27 +425,14 @@ local rayHitBox = function(rayOrigin, rayDir, boxCFrame, boxSize)
 
 	local tMin, tMax = -math.huge, math.huge
 
-	local origins = {relOrigin.X, relOrigin.Y, relOrigin.Z}
-	local dirs = {relDir.X, relDir.Y, relDir.Z}
-	local halves = {halfSize.X, halfSize.Y, halfSize.Z}
+	tMin, tMax = rayHitBoxAxis(relOrigin.X, relDir.X, halfSize.X, tMin, tMax)
+	if not tMin then return false, 0 end
 
-	for i = 1, 3 do
-		local o, d, h = origins[i], dirs[i], halves[i]
-		if abs(d) < 1e-8 then
-			if o < -h or o > h then
-				return false, 0
-			end
-		else
-			local t1 = (-h - o) / d
-			local t2 = (h - o) / d
-			if t1 > t2 then t1, t2 = t2, t1 end
-			tMin = max(tMin, t1)
-			tMax = min(tMax, t2)
-			if tMin > tMax then
-				return false, 0
-			end
-		end
-	end
+	tMin, tMax = rayHitBoxAxis(relOrigin.Y, relDir.Y, halfSize.Y, tMin, tMax)
+	if not tMin then return false, 0 end
+
+	tMin, tMax = rayHitBoxAxis(relOrigin.Z, relDir.Z, halfSize.Z, tMin, tMax)
+	if not tMin then return false, 0 end
 
 	if tMax < 0 then
 		return false, 0
@@ -537,25 +660,38 @@ function Watcher.MakeCylinderHitTest(getCFrame, radius, height, axisLocal)
 			local disc = b * b - 4 * a * c
 			if disc >= 0 then
 				local sqrtDisc = disc ^ 0.5
-				for _, t in next, {(-b - sqrtDisc) / (2 * a), (-b + sqrtDisc) / (2 * a)} do
-					if t >= 0 then
-						local axialPos = originAxisComp + axisComp * t
-						if axialPos >= -halfHeight and axialPos <= halfHeight and t < bestT then
-							bestT, found = t, true
-						end
+				local tA = (-b - sqrtDisc) / (2 * a)
+				local tB = (-b + sqrtDisc) / (2 * a)
+
+				if tA >= 0 then
+					local axialPos = originAxisComp + axisComp * tA
+					if axialPos >= -halfHeight and axialPos <= halfHeight and tA < bestT then
+						bestT, found = tA, true
+					end
+				end
+				if tB >= 0 then
+					local axialPos = originAxisComp + axisComp * tB
+					if axialPos >= -halfHeight and axialPos <= halfHeight and tB < bestT then
+						bestT, found = tB, true
 					end
 				end
 			end
 		end
 
 		if abs(axisComp) > 1e-8 then
-			for _, capOffset in next, {-halfHeight, halfHeight} do
-				local t = (capOffset - originAxisComp) / axisComp
-				if t >= 0 and t < bestT then
-					local hitRadial = originRadial + dirRadial * t
-					if vector_dot(hitRadial, hitRadial) <= radius * radius then
-						bestT, found = t, true
-					end
+			local t1 = (-halfHeight - originAxisComp) / axisComp
+			if t1 >= 0 and t1 < bestT then
+				local hitRadial = originRadial + dirRadial * t1
+				if vector_dot(hitRadial, hitRadial) <= radius * radius then
+					bestT, found = t1, true
+				end
+			end
+
+			local t2 = (halfHeight - originAxisComp) / axisComp
+			if t2 >= 0 and t2 < bestT then
+				local hitRadial = originRadial + dirRadial * t2
+				if vector_dot(hitRadial, hitRadial) <= radius * radius then
+					bestT, found = t2, true
 				end
 			end
 		end
@@ -598,7 +734,7 @@ function Watcher:_internalEndDrag()
 	self._dragInput = nil
 
 	self.DragEnded:Fire()
-	
+
 	updateHover()
 end
 
@@ -733,16 +869,19 @@ end
 local MoveHandles = {}
 MoveHandles.__index = MoveHandles
 
-function MoveHandles.new(adornee)
+function MoveHandles.new(adornees)
 	local self = setmetatable({}, MoveHandles)
-	self.Adornee = adornee
+	self.Adornees = normalizeAdornees(adornees)
+	self.Classes = computeClasses(self.Adornees)
+	self.PrimaryIndex = #self.Adornees
+	self._activeCFrames = {}
+	self._activeCount = 0
 	self._visible = true
 	self._holder = newHolder("MoveHandles", GizmoFolder)
 	self._watchers = {}
 	self._pieces = {}
 	self._conns = {}
 	self._dragConns = {}
-	self.Class = isAllowedClass(adornee)
 	self.isWorldSpace = false
 	self._dragging = false
 
@@ -751,11 +890,11 @@ function MoveHandles.new(adornee)
 	self.Ended = CreateSignal()
 	self.MouseEnter = CreateSignal()
 	self.MouseLeave = CreateSignal()
-	
+
 	for _, axis in next, Axes do
 		self:_buildAxis(axis)
 	end
-	
+
 	local originsphere = Instance_new("SphereHandleAdornment")
 	originsphere.Name = "origin"
 	originsphere.Adornee = self._holder
@@ -765,9 +904,9 @@ function MoveHandles.new(adornee)
 	originsphere.Radius = 0.1
 	originsphere.Transparency = 0.4
 	originsphere.Parent = self._holder
-	
+
 	self._originsphere = originsphere
-	
+
 	self:_syncHolder()
 	self._heartbeatConn = Heartbeat:Connect(function()
 		self:_syncHolder()
@@ -777,48 +916,21 @@ function MoveHandles.new(adornee)
 end
 
 function MoveHandles:_syncHolder()
-	local adornee = self.Adornee
-	if self._visible and adornee then
-		local class = self.Class
-		if class == "BasePart" then
-			local cframe = adornee.CFrame
-			self._holder.CFrame = self.isWorldSpace and CFrame_new(cframe.Position) or cframe
-		elseif class == "PVInstance" then
-			local cframe = adornee:GetPivot()
-			self._holder.CFrame = self.isWorldSpace and CFrame_new(cframe.Position) or cframe
-		elseif class == "Motor6D" then
-			local part0, part1 = adornee.Part0, adornee.Part1
-			if part0 and part1 then
-				local cframe = part0.CFrame * adornee.C0 * adornee.Transform
-				self._holder.CFrame = self.isWorldSpace and CFrame_new(cframe.Position) or cframe
-			end
-		elseif class == "Joint" then
-			local part0, part1 = adornee.Part0, adornee.Part1
-			if part0 and part1 then
-				local cframe = part0.CFrame * adornee.C0
-				self._holder.CFrame = self.isWorldSpace and CFrame_new(cframe.Position) or cframe
-			end
-		elseif class == "AnimationConstraint" then
-			local att0, att1 = adornee.Attachment0, adornee.Attachment1
-			if att0 and att1 then
-				local cframe = att0.WorldCFrame * adornee.Transform
-				self._holder.CFrame = self.isWorldSpace and CFrame_new(cframe.Position) or cframe
-			end
-		elseif class == "Attachment" then
-			local cframe = adornee.WorldCFrame
-			self._holder.CFrame = self.isWorldSpace and CFrame_new(cframe.Position) or cframe
-		elseif class == "Bone" then
-			local cframe = adornee.WorldCFrame * adornee.Transform
-			self._holder.CFrame = self.isWorldSpace and CFrame_new(cframe.Position) or cframe
+	if self._visible then
+		local pivotCF, cframes, count = getPivotCFrame(self.Adornees, self.Classes, self.PrimaryIndex, self.isWorldSpace)
+		self._activeCFrames = cframes
+		self._activeCount = count
+		if pivotCF then
+			self._holder.CFrame = pivotCF
+			self:_updateHandlePositions()
 		end
-		self:_updateHandlePositions()
 	end
 end
 
 function MoveHandles:_buildAxis(axis)
 	local configuration = configurations.MoveHandles
 	local shaftLen, tipLen, radius = configuration.shaftLength, configuration.tipLength, configuration.Radius
-	
+
 	local inputbox = Instance_new("BoxHandleAdornment")
 	inputbox.Name = axis.name .. "_InputBox"
 	inputbox.Adornee = self._holder
@@ -827,7 +939,7 @@ function MoveHandles:_buildAxis(axis)
 	inputbox.Transparency = 1
 	inputbox.CFrame = axisCFrame(axis.dir, shaftLen * 1.5)
 	inputbox.Parent = self._holder
-	
+
 	local shaft = Instance_new("CylinderHandleAdornment")
 	shaft.Name = axis.name .. "_Shaft"
 	shaft.Adornee = self._holder
@@ -849,7 +961,7 @@ function MoveHandles:_buildAxis(axis)
 	tip.AlwaysOnTop = true
 	tip.ZIndex = 0
 	tip.Transparency = 0.25
-	tip.CFrame = axisCFrame(axis.dir, shaftLen + tipLen / 2) * (CFrame_new(0, 0, -0.45) * CFrame_Angles(3.141592653589793, 0, 0))
+	tip.CFrame = axisCFrame(axis.dir, shaftLen + tipLen / 2) * TIP_FLIP_CF
 	tip.Parent = self._holder
 
 	self._pieces[axis.name] = {
@@ -858,7 +970,7 @@ function MoveHandles:_buildAxis(axis)
 		tip = tip,
 		axis = axis
 	}
-	
+
 	local watcher = Watcher.Watch(inputbox, {
 		Draggable = true,
 		Padding = 0.5
@@ -870,7 +982,7 @@ function MoveHandles:_buildAxis(axis)
 		shaft.Color3 = c
 		tip.Color3 = c
 	end
-	
+
 	table_insert(self._conns, watcher.MouseEnter:Connect(function()
 		if self._visible then
 			highlight(true)
@@ -901,7 +1013,7 @@ function MoveHandles:_buildAxis(axis)
 end
 
 function MoveHandles:_updateHandlePositions()
-	if not self.Adornee then
+	if #self.Adornees == 0 then
 		return
 	end
 
@@ -910,17 +1022,17 @@ function MoveHandles:_updateHandlePositions()
 		local inputbox = data.inputbox
 		local shaft = data.shaft
 		local tip = data.tip
-		
-		local offset = getAxisOffset(self.Adornee, axis.dir) + 0.5
-		
-		shaft.CFrame = axisCFrame(axis.dir, offset + shaft.Height * 0.5)
-		tip.CFrame = axisCFrame(axis.dir, offset + shaft.Height + tip.Height * 0.5) * CFrame_new(0, 0, -0.45) * CFrame_Angles(3.141592653589793,0,0)
-		
+
+		local offset = getGroupAxisOffset(self.Adornees, axis.dir) + 0.5
+
+		shaft.CFrame = axisCFrameFast(axis.dir, axis.right, axis.up, offset + shaft.Height * 0.5)
+		tip.CFrame = axisCFrameFast(axis.dir, axis.right, axis.up, offset + shaft.Height + tip.Height * 0.5) * TIP_FLIP_CF
+
 		local overallHeight = shaft.Height + tip.Height
 		local radius = configurations.MoveHandles.Radius
 
 		inputbox.Size = vector_create(radius * 5, radius * 5, overallHeight)
-		inputbox.CFrame = axisCFrame(axis.dir, offset + overallHeight * 0.5)
+		inputbox.CFrame = axisCFrameFast(axis.dir, axis.right, axis.up, offset + overallHeight * 0.5)
 	end
 end
 
@@ -939,55 +1051,37 @@ function MoveHandles:_beginDrag(axis, highlight)
 	if self._dragging then return end
 	self._dragging = true
 	self:_setOtherAxesVisible(axis.name, false)
-	
-	local adornee = self.Adornee
-	local class = self.Class
-	
-	if not adornee then return end
-	if not class then return end
 
-	local startCFrame = getAdorneeCFrame(adornee, class)
-	
-	local worldDir
-	if self.isWorldSpace then
-		worldDir = vector_normalize(axis.dir)
-	else
-		worldDir = vector_normalize(startCFrame:VectorToWorldSpace(axis.dir))
+	local startCFrames = self._activeCFrames
+	if not startCFrames or (self._activeCount or 0) == 0 then
+		self._dragging = false
+		self:_setOtherAxesVisible(axis.name, true)
+		return
 	end
-	local origin = startCFrame.Position
-	
+
+	local pivotStartCFrame = self._holder.CFrame
+	local worldDir = self.isWorldSpace and vector_normalize(axis.dir) or vector_normalize(pivotStartCFrame:VectorToWorldSpace(axis.dir))
+	local origin = pivotStartCFrame.Position
+
 	local ro, rd = mouseRay()
 	local startT = closestT(origin, worldDir, ro, rd)
 
 	self.Began:Fire(axis.name)
-	
+
 	local watcher = self._watchers[axis.name]
 
 	local moveConn = watcher.DragChanged:Connect(function(o2, d2)
 		local t = closestT(origin, worldDir, o2, d2)
 		local delta = worldDir * (t - startT)
-		local newCF = startCFrame + delta
-		if class == "BasePart" then
-			adornee.CFrame = newCF
-		elseif class == "PVInstance" then
-			adornee:PivotTo(newCF)
-		elseif class == "Motor6D" then
-			adornee.Transform = adornee.C0:Inverse() * adornee.Part0.CFrame:ToObjectSpace(newCF)
-		elseif class == "Joint" then
-			adornee.C0 = adornee.Part0.CFrame:ToObjectSpace(newCF)
-		elseif class == "AnimationConstraint" then
-			adornee.Transform = adornee.C0:Inverse() * adornee.Attachment0.WorldCFrame:ToObjectSpace(newCF)
-		elseif class == "Attachment" then
-			adornee.CFrame = adornee.Parent.CFrame:ToObjectSpace(newCF)
-		elseif class == "Bone" then
-			local parentWorld
-			if bone.Parent:IsA("Bone") then
-				parentWorld = bone.Parent.WorldCFrame
-			else
-				parentWorld = bone.Parent.CFrame
+
+		for i, adornee in next, self.Adornees do
+			local class = self.Classes[i]
+			local startCF = startCFrames[i]
+			if adornee and class and startCF then
+				applyCFrame(adornee, class, startCF + delta)
 			end
-			adornee.Transform = adornee.CFrame:Inverse() * parentWorld:ToObjectSpace(newCF)
 		end
+
 		self:_syncHolder()
 		self.Changed:Fire(axis.name, delta)
 	end)
@@ -1008,13 +1102,18 @@ function MoveHandles:_beginDrag(axis, highlight)
 	table_insert(self._dragConns, upConn)
 end
 
-function MoveHandles:SetAdornee(adornee)
-	self.Adornee = adornee
-	self.Class = isAllowedClass(adornee)
+function MoveHandles:SetAdornees(adornees)
+	self.Adornees = normalizeAdornees(adornees)
+	self.Classes = computeClasses(self.Adornees)
+	self.PrimaryIndex = #self.Adornees
 	if self._visible then
 		self:_setOtherAxesVisible("", true)
 	end
 	self:_syncHolder()
+end
+
+function MoveHandles:SetAdornee(adornee)
+	self:SetAdornees(adornee and {adornee} or {})
 end
 
 function MoveHandles:SetVisible(bool)
@@ -1032,22 +1131,22 @@ function MoveHandles:Destroy()
 	for _, c in next, self._conns do c:Disconnect() end
 	for _, c in next, self._dragConns do c:Disconnect() end
 	for _, i in next, self._watchers do i:Destroy() end
-	
+
 	self._heartbeatConn:Disconnect()
-	
+
 	self._holder:Destroy()
-	
+
 	table_clear(self._conns)
 	table_clear(self._dragConns)
 	table_clear(self._pieces)
 	table_clear(self._watchers)
-	
+
 	self.Began:Destroy()
 	self.Changed:Destroy()
 	self.Ended:Destroy()
 	self.MouseEnter:Destroy()
 	self.MouseLeave:Destroy()
-	
+
 	table_clear(self)
 	setmetatable(self, nil)
 end
@@ -1058,29 +1157,32 @@ end
 local RotateHandles = {}
 RotateHandles.__index = RotateHandles
 
-function RotateHandles.new(adornee)
+function RotateHandles.new(adornees)
 	local self = setmetatable({}, RotateHandles)
-	self.Adornee = adornee
+	self.Adornees = normalizeAdornees(adornees)
+	self.Classes = computeClasses(self.Adornees)
+	self.PrimaryIndex = #self.Adornees
+	self._activeCFrames = {}
+	self._activeCount = 0
 	self._visible = false
 	self._holder = newHolder("RotateHandles", GizmoFolder)
 	self._rings = {}
 	self._conns = {}
 	self._dragConns = {}
 	self._watchers = {}
-	self.Class = isAllowedClass(adornee)
 	self.isWorldSpace = false
 	self._dragging = false
-	
+
 	self.Began = CreateSignal()
 	self.Changed = CreateSignal()
 	self.Ended = CreateSignal()
 	self.MouseEnter = CreateSignal()
 	self.MouseLeave = CreateSignal()
-	
+
 	for _, axis in next, RotateAxes do
 		self:_buildRing(axis)
 	end
-	
+
 	local originsphere = Instance_new("SphereHandleAdornment")
 	originsphere.Name = "origin"
 	originsphere.Adornee = self._holder
@@ -1090,7 +1192,7 @@ function RotateHandles.new(adornee)
 	originsphere.Radius = 0.1
 	originsphere.Transparency = 0.4
 	originsphere.Parent = self._holder
-	
+
 	self._originsphere = originsphere
 
 	self:_syncHolder()
@@ -1102,41 +1204,14 @@ function RotateHandles.new(adornee)
 end
 
 function RotateHandles:_syncHolder()
-	local adornee = self.Adornee
-	if self._visible and adornee then
-		local class = self.Class
-		if class == "BasePart" then
-			local cframe = adornee.CFrame
-			self._holder.CFrame = self.isWorldSpace and CFrame_new(cframe.Position) or cframe
-		elseif class == "PVInstance" then
-			local cframe = adornee:GetPivot()
-			self._holder.CFrame = self.isWorldSpace and CFrame_new(cframe.Position) or cframe
-		elseif class == "Motor6D" then
-			local part0, part1 = adornee.Part0, adornee.Part1
-			if part0 and part1 then
-				local cframe = part0.CFrame * adornee.C0 * adornee.Transform
-				self._holder.CFrame = self.isWorldSpace and CFrame_new(cframe.Position) or cframe
-			end
-		elseif class == "Joint" then
-			local part0, part1 = adornee.Part0, adornee.Part1
-			if part0 and part1 then
-				local cframe = part0.CFrame * adornee.C0
-				self._holder.CFrame = self.isWorldSpace and CFrame_new(cframe.Position) or cframe
-			end
-		elseif class == "AnimationConstraint" then
-			local att0, att1 = adornee.Attachment0, adornee.Attachment1
-			if att0 and att1 then
-				local cframe = att0.WorldCFrame * adornee.Transform
-				self._holder.CFrame = self.isWorldSpace and CFrame_new(cframe.Position) or cframe
-			end
-		elseif class == "Attachment" then
-			local cframe = adornee.WorldCFrame
-			self._holder.CFrame = self.isWorldSpace and CFrame_new(cframe.Position) or cframe
-		elseif class == "Bone" then
-			local cframe = adornee.WorldCFrame * adornee.Transform
-			self._holder.CFrame = self.isWorldSpace and CFrame_new(cframe.Position) or cframe
+	if self._visible then
+		local pivotCF, cframes, count = getPivotCFrame(self.Adornees, self.Classes, self.PrimaryIndex, self.isWorldSpace)
+		self._activeCFrames = cframes
+		self._activeCount = count
+		if pivotCF then
+			self._holder.CFrame = pivotCF
+			self:_updateRings()
 		end
-		self:_updateRings()
 	end
 end
 
@@ -1146,7 +1221,7 @@ function RotateHandles:_buildRing(axis)
 	local up = abs(axis.dir.Y) < 0.99 and vector_create(0, 1, 0) or vector_create(1, 0, 0)
 	local u = vector_normalize(vector_cross(axis.dir, up))
 	local v = vector_normalize(vector_cross(axis.dir, u))
-	
+
 	local ring = Instance_new("CylinderHandleAdornment")
 	ring.Name = axis.name.."_Ring"
 	ring.Adornee = self._holder
@@ -1155,7 +1230,7 @@ function RotateHandles:_buildRing(axis)
 	ring.ZIndex = 0
 	ring.Transparency = 0.6
 	ring.Parent = self._holder
-		
+
 	local knob = Instance_new("SphereHandleAdornment")
 	knob.Name = axis.name.."_Knob"
 	knob.Adornee = self._holder
@@ -1170,7 +1245,7 @@ function RotateHandles:_buildRing(axis)
 		knob = knob,
 		axis = axis
 	}
-	
+
 	local watcher = Watcher.WatchSphere(knob, {
 		Draggable = true,
 		Padding = 1
@@ -1180,7 +1255,7 @@ function RotateHandles:_buildRing(axis)
 	local highlight = function(on)
 		knob.Color3 = on and Color3_new(1, 1, 1) or axis.color
 	end
-	
+
 	table_insert(self._conns, watcher.MouseEnter:Connect(function()
 		if self._visible then
 			highlight(true)
@@ -1211,28 +1286,27 @@ function RotateHandles:_buildRing(axis)
 end
 
 function RotateHandles:_updateRings()
-	local adornee = self.Adornee
-	if not adornee then
+	if #self.Adornees == 0 then
 		return
 	end
-	
-	local radius = getRadius(adornee) + 1
+
+	local radius = getGroupRadius(self.Adornees) + 1
 	local thickness = radius * 0.045
 	local handleRadius = radius * 0.08
-	
+
 	for _, data in next, self._rings do
 		local ring = data.ring
 		local knob = data.knob
 		local axis = data.axis
-		
+
 		ring.Radius = radius
 		ring.InnerRadius = radius - thickness
 		ring.Height = thickness
-		ring.CFrame = axisCFrame(axis.dir, 0)
-		
+		ring.CFrame = axisCFrameFast(axis.dir, axis.right, axis.up, 0)
+
 		knob.Radius = handleRadius * 2
 		local knobOffset = radius + (handleRadius * 2) * 0.6
-		knob.CFrame = axisCFrame(axis.kdir, knobOffset)
+		knob.CFrame = axisCFrameFast(axis.kdir, axis.kright, axis.kup, knobOffset)
 	end
 end
 
@@ -1250,26 +1324,27 @@ function RotateHandles:_beginDrag(axis, u, v, radius, highlight)
 	if self._dragging then return end
 	self._dragging = true
 	self:_setOtherRingsVisible(axis.name, false)
-	
-	local adornee = self.Adornee
-	local class = self.Class
-	
-	if not adornee then return end
-	if not class then return end
 
-	local startCFrame = getAdorneeCFrame(adornee, class)
-	
-	local center = startCFrame.Position
+	local startCFrames = self._activeCFrames
+	if not startCFrames or (self._activeCount or 0) == 0 then
+		self._dragging = false
+		self:_setOtherRingsVisible(axis.name, true)
+		return
+	end
+
+	local pivotStartCFrame = self._holder.CFrame
+	local center = pivotStartCFrame.Position
+	local forceWorld = self.isWorldSpace or (self._activeCount or 0) > 1
+
 	local worldNormal, worldU, worldV
-	
-	if self.isWorldSpace then
+	if forceWorld then
 		worldNormal = vector_normalize(axis.dir)
 		worldU = vector_normalize(u)
 		worldV = vector_normalize(v)
 	else
-		worldNormal = vector_normalize(startCFrame:VectorToWorldSpace(axis.dir))
-		worldU = vector_normalize(startCFrame:VectorToWorldSpace(u))
-		worldV = vector_normalize(startCFrame:VectorToWorldSpace(v))
+		worldNormal = vector_normalize(pivotStartCFrame:VectorToWorldSpace(axis.dir))
+		worldU = vector_normalize(pivotStartCFrame:VectorToWorldSpace(u))
+		worldV = vector_normalize(pivotStartCFrame:VectorToWorldSpace(v))
 	end
 
 	local angleAt = function(ro, rd)
@@ -1284,7 +1359,7 @@ function RotateHandles:_beginDrag(axis, u, v, radius, highlight)
 	local lastAngle = startAngle
 
 	self.Began:Fire(axis.name)
-	
+
 	local watcher = self._watchers[axis.name]
 
 	local moveConn = watcher.DragChanged:Connect(function(o2, d2)
@@ -1296,38 +1371,22 @@ function RotateHandles:_beginDrag(axis, u, v, radius, highlight)
 		if step > pi then step -= pi * 2 end
 		if step < -pi then step += pi * 2 end
 		lastAngle = ang
-		
-		local cframe = getAdorneeCFrame(adornee, class)
-		local newCF
-		if self.isWorldSpace then
-			local position = cframe.Position
-			newCF = CFrame_new(position) * CFrame_fromAxisAngle(axis.dir, step) * CFrame_new(-position) * pivot
-		else
-			newCF = cframe * CFrame_fromAxisAngle(axis.dir, step)
-		end
-		
-		if class == "BasePart" then
-			adornee.CFrame = newCF
-		elseif class == "PVInstance" then
-			adornee:PivotTo(newCF)
-		elseif class == "Motor6D" then
-			adornee.Transform = adornee.C0:Inverse() * adornee.Part0.CFrame:ToObjectSpace(newCF)
-		elseif class == "Joint" then
-			adornee.C0 = adornee.Part0.CFrame:ToObjectSpace(newCF)
-		elseif class == "AnimationConstraint" then
-			adornee.Transform = adornee.C0:Inverse() * adornee.Attachment0.WorldCFrame:ToObjectSpace(newCF)
-		elseif class == "Attachment" then
-			adornee.CFrame = adornee.Parent.CFrame:ToObjectSpace(newCF)
-		elseif class == "Bone" then
-			local parentWorld
-			if bone.Parent:IsA("Bone") then
-				parentWorld = bone.Parent.WorldCFrame
-			else
-				parentWorld = bone.Parent.CFrame
+
+		for i, adornee in next, self.Adornees do
+			local class = self.Classes[i]
+			local startCF = startCFrames[i]
+			if adornee and class and startCF then
+				local newCF
+				if forceWorld then
+					newCF = CFrame_new(center) * CFrame_fromAxisAngle(axis.dir, step) * CFrame_new(-center) * startCF
+				else
+					newCF = startCF * CFrame_fromAxisAngle(axis.dir, step)
+				end
+				applyCFrame(adornee, class, newCF)
+				startCFrames[i] = newCF
 			end
-			adornee.Transform = adornee.CFrame:Inverse() * parentWorld:ToObjectSpace(newCF)
 		end
-		
+
 		self:_syncHolder()
 		self.Changed:Fire(axis.name, step)
 	end)
@@ -1343,18 +1402,23 @@ function RotateHandles:_beginDrag(axis, u, v, radius, highlight)
 			self.Ended:Fire(axis.name)
 		end
 	end)
-	
+
 	table_insert(self._dragConns, moveConn)
 	table_insert(self._dragConns, upConn)
 end
 
-function RotateHandles:SetAdornee(adornee)
-	self.Adornee = adornee
-	self.Class = isAllowedClass(adornee)
+function RotateHandles:SetAdornees(adornees)
+	self.Adornees = normalizeAdornees(adornees)
+	self.Classes = computeClasses(self.Adornees)
+	self.PrimaryIndex = #self.Adornees
 	if self._visible then
 		self:_setOtherRingsVisible("", true)
 	end
 	self:_syncHolder()
+end
+
+function RotateHandles:SetAdornee(adornee)
+	self:SetAdornees(adornee and {adornee} or {})
 end
 
 function RotateHandles:SetVisible(bool)
@@ -1373,20 +1437,20 @@ function RotateHandles:Destroy()
 	for _, c in next, self._dragConns do c:Disconnect() end
 	if self._heartbeatConn then self._heartbeatConn:Disconnect() end
 	for _, i in next, self._watchers do i:Destroy() end
-	
+
 	self._holder:Destroy()
-	
+
 	table_clear(self._conns)
 	table_clear(self._dragConns)
 	table_clear(self._rings)
 	table_clear(self._watchers)
-	
+
 	self.Began:Destroy()
 	self.Changed:Destroy()
 	self.Ended:Destroy()
 	self.MouseEnter:Destroy()
 	self.MouseLeave:Destroy()
-	
+
 	table_clear(self)
 	setmetatable(self, nil)
 end
@@ -1407,24 +1471,27 @@ local withAxisAligned = function(size, dir, newValue)
 	return size * keep + mask * newValue
 end
 
-function ResizeHandles.new(adornee)
+function ResizeHandles.new(adornees)
 	local self = setmetatable({}, ResizeHandles)
-	self.Adornee = adornee
+	self.Adornees = normalizeAdornees(adornees)
+	self.PrimaryIndex = #self.Adornees
 	self._visible = true
 	self._holder = newHolder("ResizeHandles", GizmoFolder)
 	self._cubes = {}
 	self._conns = {}
 	self._dragConns = {}
 	self._watchers = {}
-	self.isValid = adornee and adornee:IsA("BasePart")
 	self._dragging = false
+
+	local primary = self:_primaryAdornee()
+	self.isValid = primary ~= nil and primary:IsA("BasePart")
 
 	self.Began = CreateSignal()
 	self.Changed = CreateSignal()
 	self.Ended = CreateSignal()
 	self.MouseEnter = CreateSignal()
 	self.MouseLeave = CreateSignal()
-	
+
 	for _, axis in next, ResizeAxes do
 		self:_buildHandle(axis)
 	end
@@ -1437,9 +1504,14 @@ function ResizeHandles.new(adornee)
 	return self
 end
 
+function ResizeHandles:_primaryAdornee()
+	return self.Adornees[self.PrimaryIndex]
+end
+
 function ResizeHandles:_syncHolder()
-	if self._visible and self.Adornee and self.isValid then
-		self._holder.CFrame = self.Adornee.CFrame
+	local primary = self:_primaryAdornee()
+	if self._visible and primary and self.isValid then
+		self._holder.CFrame = primary.CFrame
 		self:_reposition()
 	end
 end
@@ -1453,7 +1525,7 @@ function ResizeHandles:_buildHandle(axis)
 	cube.AlwaysOnTop = true
 	cube.ZIndex = 1
 	cube.Parent = self._holder
-	
+
 	self._cubes[axis.name] = {
 		cube = cube,
 		axis = axis
@@ -1464,12 +1536,12 @@ function ResizeHandles:_buildHandle(axis)
 		Padding = 0.4
 	})
 	self._watchers[axis.name] = watcher
-	
+
 	local highlight = function(on)
 		cube.Color3 = on and Color3_new(1, 1, 1) or Color3_fromRGB(80, 140, 255)
 		cube.Size = vector_one * (on and 0.5 or 0.4)
 	end
-	
+
 	table_insert(self._conns, watcher.MouseEnter:Connect(function()
 		if self._visible then
 			highlight(true)
@@ -1502,16 +1574,15 @@ function ResizeHandles:_buildHandle(axis)
 end
 
 function ResizeHandles:_reposition()
-	local adornee = self.Adornee
-	if not adornee then
+	local primary = self:_primaryAdornee()
+	if not primary then
 		return
 	end
-	
-	local size = adornee.Size
+
 	for _, c in next, self._cubes do
 		local axis = c.axis
-		local offset = getAxisOffset(self.Adornee, axis.dir) + 0.5
-		c.cube.CFrame = axisCFrame(axis.dir, offset)
+		local offset = getAxisOffset(primary, axis.dir) + 0.5
+		c.cube.CFrame = axisCFrameFast(axis.dir, axis.right, axis.up, offset)
 	end
 end
 
@@ -1527,11 +1598,12 @@ function ResizeHandles:_beginDrag(axis, highlight)
 	if self._dragging then return end
 	self._dragging = true
 	self:_setOtherAxesVisible(axis.name, false)
-	
-	if not self.Adornee then return end
 
-	local startCFrame = self.Adornee.CFrame
-	local startSize = self.Adornee.Size
+	local primary = self:_primaryAdornee()
+	if not primary then return end
+
+	local startCFrame = primary.CFrame
+	local startSize = primary.Size
 	local worldNormal = vector_normalize(startCFrame:VectorToWorldSpace(axis.dir))
 	local faceCenter = startCFrame.Position + worldNormal * (axisExtent(startSize, axis.dir) / 2)
 
@@ -1539,7 +1611,7 @@ function ResizeHandles:_beginDrag(axis, highlight)
 	local startT = closestT(faceCenter, worldNormal, ro, rd)
 
 	self.Began:Fire(axis.name)
-	
+
 	local watcher = self._watchers[axis.name]
 	local startAxisSize = axisExtent(startSize, axis.dir)
 
@@ -1550,11 +1622,11 @@ function ResizeHandles:_beginDrag(axis, highlight)
 		local newAxisSize = clamp(startAxisSize + sizeDelta, 0, 2048)
 		local appliedDelta = newAxisSize - startAxisSize
 
-		self.Adornee.Size = withAxisAligned(startSize, axis.dir, newAxisSize)
-		self.Adornee.CFrame = startCFrame * CFrame_new(axis.dir * (appliedDelta / 2))
+		primary.Size = withAxisAligned(startSize, axis.dir, newAxisSize)
+		primary.CFrame = startCFrame * CFrame_new(axis.dir * (appliedDelta / 2))
 		self:_syncHolder()
 
-		self.Changed:Fire(axis.name, self.Adornee.Size)
+		self.Changed:Fire(axis.name, primary.Size)
 	end)
 
 	local upConn
@@ -1566,16 +1638,22 @@ function ResizeHandles:_beginDrag(axis, highlight)
 		self:_setOtherAxesVisible(axis.name, true)
 		self.Ended:Fire(axis.name)
 	end)
-	
+
 	table_insert(self._dragConns, moveConn)
 	table_insert(self._dragConns, upConn)
 end
 
-function ResizeHandles:SetAdornee(part)
-	self.Adornee = part
-	self.isValid = adornee and adornee:IsA("BasePart")
+function ResizeHandles:SetAdornees(adornees)
+	self.Adornees = normalizeAdornees(adornees)
+	self.PrimaryIndex = #self.Adornees
+	local primary = self:_primaryAdornee()
+	self.isValid = primary ~= nil and primary:IsA("BasePart")
 	self:_setOtherAxesVisible("", true)
 	self:_syncHolder()
+end
+
+function ResizeHandles:SetAdornee(part)
+	self:SetAdornees(part and {part} or {})
 end
 
 function ResizeHandles:SetVisible(bool)
@@ -1588,20 +1666,20 @@ function ResizeHandles:Destroy()
 	for _, c in next, self._dragConns do c:Disconnect() end
 	if self._heartbeatConn then self._heartbeatConn:Disconnect() end
 	for _, i in next, self._watchers do i:Destroy() end
-	
+
 	self._holder:Destroy()
-	
+
 	table_clear(self._conns)
 	table_clear(self._dragConns)
-	table_clear(self._rings)
+	table_clear(self._cubes)
 	table_clear(self._watchers)
-	
+
 	self.Began:Destroy()
 	self.Changed:Destroy()
 	self.Ended:Destroy()
 	self.MouseEnter:Destroy()
 	self.MouseLeave:Destroy()
-	
+
 	table_clear(self)
 	setmetatable(self, nil)
 end
@@ -1647,16 +1725,19 @@ local RotationBetween = function(v1, v2)
 	return CFrame_fromAxisAngle(vector_normalize(axis), angle)
 end
 
-function Arcball.new(adornee)
+function Arcball.new(adornees)
 	local self = setmetatable({}, Arcball)
-	self.Adornee = adornee
+	self.Adornees = normalizeAdornees(adornees)
+	self.Classes = computeClasses(self.Adornees)
+	self.PrimaryIndex = #self.Adornees
+	self._activeCFrames = {}
+	self._activeCount = 0
 	self._visible = true
 	self._holder = newHolder("Arcball", GizmoFolder)
 	self._conns = {}
 	self._dragConns = {}
 	self._arcs = {}
 	self._lastTouchCount = 0
-	self.Class = isAllowedClass(adornee)
 	self._dragging = false
 
 	self.Began = CreateSignal()
@@ -1664,9 +1745,9 @@ function Arcball.new(adornee)
 	self.Ended = CreateSignal()
 	self.MouseEnter = CreateSignal()
 	self.MouseLeave = CreateSignal()
-	
+
 	self:_buildAdornment()
-	
+
 	local originsphere = Instance_new("SphereHandleAdornment")
 	originsphere.Name = "origin"
 	originsphere.Adornee = self._holder
@@ -1676,7 +1757,7 @@ function Arcball.new(adornee)
 	originsphere.Radius = 0.1
 	originsphere.Transparency = 0.4
 	originsphere.Parent = self._holder
-	
+
 	self._originsphere = originsphere
 
 	self:_syncHolder()
@@ -1688,47 +1769,20 @@ function Arcball.new(adornee)
 end
 
 function Arcball:_syncHolder()
-	local adornee = self.Adornee
-	if self._visible and adornee then
-		local class = self.Class
-		if class == "BasePart" then
-			local cframe = adornee.CFrame
-			self._holder.CFrame = cframe
-		elseif class == "PVInstance" then
-			local cframe = adornee:GetPivot()
-			self._holder.CFrame = cframe
-		elseif class == "Motor6D" then
-			local part0, part1 = adornee.Part0, adornee.Part1
-			if part0 and part1 then
-				local cframe = part0.CFrame * adornee.C0 * adornee.Transform
-				self._holder.CFrame = cframe
-			end
-		elseif class == "Joint" then
-			local part0, part1 = adornee.Part0, adornee.Part1
-			if part0 and part1 then
-				local cframe = part0.CFrame * adornee.C0
-				self._holder.CFrame = cframe
-			end
-		elseif class == "AnimationConstraint" then
-			local att0, att1 = adornee.Attachment0, adornee.Attachment1
-			if att0 and att1 then
-				local cframe = att0.WorldCFrame * adornee.C0 * adornee.Transform
-				self._holder.CFrame = cframe
-			end
-		elseif class == "Attachment" then
-			local cframe = adornee.WorldCFrame
-			self._holder.CFrame = cframe
-		elseif class == "Bone" then
-			local cframe = adornee.WorldCFrame * adornee.Transform
-			self._holder.CFrame = cframe
+	if self._visible then
+		local pivotCF, cframes, count = getPivotCFrame(self.Adornees, self.Classes, self.PrimaryIndex, true)
+		self._activeCFrames = cframes
+		self._activeCount = count
+		if pivotCF then
+			self._holder.CFrame = pivotCF
+			self:_update()
 		end
-		self:_update()
 	end
 end
 
 function Arcball:_buildAdornment()
 	local outlinepart = newHolder("outlinepart", self._holder)
-	
+
 	local outlinering = Instance_new("CylinderHandleAdornment")
 	outlinering.Name = "outline"
 	outlinering.Adornee = outlinepart
@@ -1737,7 +1791,7 @@ function Arcball:_buildAdornment()
 	outlinering.ZIndex = 1
 	outlinering.Transparency = 0.3
 	outlinering.Parent = self._holder
-	
+
 	local inputsphere = Instance_new("SphereHandleAdornment")
 	inputsphere.Name = "trackSphere"
 	inputsphere.Adornee = outlinepart
@@ -1745,7 +1799,7 @@ function Arcball:_buildAdornment()
 	inputsphere.ZIndex = 2
 	inputsphere.Transparency = 1
 	inputsphere.Parent = self._holder
-	
+
 	local sphere = Instance_new("SphereHandleAdornment")
 	sphere.Name = "innerline"
 	sphere.Adornee = outlinepart
@@ -1754,13 +1808,13 @@ function Arcball:_buildAdornment()
 	sphere.ZIndex = 1
 	sphere.Transparency = 0.6
 	sphere.Parent = self._holder
-	
+
 	local rings = {
 		{name = "X", dir = vector_create(1, 0, 0), color = Color3_fromRGB(255, 70, 70)},
 		{name = "Y", dir = vector_create(0, 1, 0), color = Color3_fromRGB(80, 255, 80)},
 		{name = "Z", dir = vector_create(0, 0, 1), color = Color3_fromRGB(80, 140, 255)}
 	}
-	
+
 	for _, data in next, rings do
 		local ring = Instance_new("CylinderHandleAdornment")
 		ring.Name = data.name.."_ring"
@@ -1772,28 +1826,28 @@ function Arcball:_buildAdornment()
 		ring.Angle = 180
 		ring.Transparency = 0.5
 		ring.Parent = self._holder
-		
+
 		self._arcs[data.name] = ring
 	end
-	
+
 	self._arcs.outline = outlinering
 	self._arcs.sphere = sphere
 	self._arcs.inputsphere = inputsphere
 	self._arcs.outlinepart = outlinepart
-	
+
 	local watcherdata = {
 		Draggable = true,
 		Padding = 5
 	}
 	local watcher = Watcher.WatchSphere(inputsphere, watcherdata)
-	
+
 	self._watcherdata = watcherdata
 	self._watcher = watcher
-	
+
 	local highlight = function(on)
-		
+
 	end
-	
+
 	table_insert(self._conns, watcher.MouseEnter:Connect(function()
 		if self._visible then
 			highlight(true)
@@ -1824,16 +1878,12 @@ function Arcball:_buildAdornment()
 end
 
 function Arcball:_update()
-	local adornee = self.Adornee
-	local class = self.Class
-	
-	if not adornee then return end
-	if not class then return end
-	
-	local radius = getRadius(adornee)
+	if #self.Adornees == 0 then return end
+
+	local radius = getGroupRadius(self.Adornees)
 	local thickness = radius * 0.045
 	local handleRadius = radius * 0.08
-	
+
 	for name, obj in next, self._arcs do
 		if name == "X" or name == "Y" or name == "Z" then
 			obj.Radius = radius
@@ -1841,16 +1891,16 @@ function Arcball:_update()
 			obj.Height = thickness
 		end
 	end
-	
+
 	self._watcherdata.Padding = radius
 	self._arcs.inputsphere.Radius = radius
 	self._arcs.sphere.Radius = radius / 1.25
 	self._arcs.outline.Radius = radius
 	self._arcs.outline.InnerRadius = radius - thickness
 	self._arcs.outline.Height = thickness
-	
+
 	if Camera then
-		local cframe = getAdorneeCFrame(adornee, class)
+		local cframe = self._holder.CFrame
 		local look = Camera.CFrame.LookVector
 
 		self._arcs.outlinepart.CFrame = CFrame_lookAt(cframe.Position, cframe.Position + look, Camera.CFrame.UpVector)
@@ -1860,50 +1910,42 @@ end
 function Arcball:_beginDrag(highlight)
 	if self._dragging then return end
 	self._dragging = true
-	
-	local adornee = self.Adornee
-	local class = self.Class
-	
-	if not adornee then return end
-	if not class then return end
-	
+
+	local startCFrames = self._activeCFrames
+	if not startCFrames or (self._activeCount or 0) == 0 then
+		self._dragging = false
+		return
+	end
+
 	local startLocalVector = GetArcballVector(UserInputService:GetMouseLocation(), Camera.ViewportSize)
 	local worldStart = Camera.CFrame:VectorToWorldSpace(startLocalVector)
-	local startCFrame = getAdorneeCFrame(adornee, class)
-	
+	local pivotPos = self._holder.CFrame.Position
+	local forceWorld = (self._activeCount or 0) > 1
+
 	self.Began:Fire()
-	
+
 	local watcher = self._watcher
 
 	local moveConn = watcher.DragChanged:Connect(function()
 		local currentLocalVector = GetArcballVector(UserInputService:GetMouseLocation(), Camera.ViewportSize)
 		local worldCurrent = Camera.CFrame:VectorToWorldSpace(currentLocalVector)
 		local rotation = RotationBetween(worldStart, worldCurrent)
-		local position = startCFrame.Position
-		
-		local newCF = CFrame_new(position) * rotation * CFrame_new(-position) * startCFrame
-		if class == "BasePart" then
-			adornee.CFrame = newCF
-		elseif class == "PVInstance" then
-			adornee:PivotTo(newCF)
-		elseif class == "Motor6D" then
-			adornee.Transform = adornee.C0:Inverse() * adornee.Part0.CFrame:ToObjectSpace(newCF)
-		elseif class == "Joint" then
-			adornee.C0 = adornee.Part0.CFrame:ToObjectSpace(newCF)
-		elseif class == "AnimationConstraint" then
-			adornee.Transform = adornee.C0:Inverse() * adornee.Attachment0.WorldCFrame:ToObjectSpace(newCF)
-		elseif class == "Attachment" then
-			adornee.CFrame = adornee.Parent.CFrame:ToObjectSpace(newCF)
-		elseif class == "Bone" then
-			local parentWorld
-			if bone.Parent:IsA("Bone") then
-				parentWorld = bone.Parent.WorldCFrame
-			else
-				parentWorld = bone.Parent.CFrame
+
+		for i, adornee in next, self.Adornees do
+			local class = self.Classes[i]
+			local startCF = startCFrames[i]
+			if adornee and class and startCF then
+				local newCF
+				if forceWorld then
+					newCF = CFrame_new(pivotPos) * rotation * CFrame_new(-pivotPos) * startCF
+				else
+					local position = startCF.Position
+					newCF = CFrame_new(position) * rotation * CFrame_new(-position) * startCF
+				end
+				applyCFrame(adornee, class, newCF)
 			end
-			adornee.Transform = adornee.CFrame:Inverse() * parentWorld:ToObjectSpace(newCF)
 		end
-		
+
 		self:_syncHolder()
 		self.Changed:Fire()
 	end)
@@ -1916,15 +1958,20 @@ function Arcball:_beginDrag(highlight)
 		highlight(false)
 		self.Ended:Fire()
 	end)
-	
+
 	table_insert(self._dragConns, moveConn)
 	table_insert(self._dragConns, upConn)
 end
 
-function Arcball:SetAdornee(adornee)
-	self.Adornee = adornee
-	self.Class = isAllowedClass(adornee)
+function Arcball:SetAdornees(adornees)
+	self.Adornees = normalizeAdornees(adornees)
+	self.Classes = computeClasses(self.Adornees)
+	self.PrimaryIndex = #self.Adornees
 	self:_syncHolder()
+end
+
+function Arcball:SetAdornee(adornee)
+	self:SetAdornees(adornee and {adornee} or {})
 end
 
 function Arcball:SetVisible(bool)
@@ -1942,19 +1989,19 @@ function Arcball:Destroy()
 	for _, c in next, self._dragConns do c:Disconnect() end
 	if self._heartbeatConn then self._heartbeatConn:Disconnect() end
 	self._watcher:Destroy()
-	
+
 	self._holder:Destroy()
-	
+
 	table_clear(self._conns)
 	table_clear(self._dragConns)
 	table_clear(self._arcs)
-	
+
 	self.Began:Destroy()
 	self.Changed:Destroy()
 	self.Ended:Destroy()
 	self.MouseEnter:Destroy()
 	self.MouseLeave:Destroy()
-	
+
 	table_clear(self)
 	setmetatable(self, nil)
 end
