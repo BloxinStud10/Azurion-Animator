@@ -25,9 +25,7 @@ if not ccontainer then
 end
 
 local azFuncs = rawget(ccontainer, "functions")
-local waitForSignal = rawget(azFuncs, "waitForSignal")
-
-local SelectionSignal = waitForSignal("Selection")
+local getSignal = rawget(azFuncs, "getSignal")
 
 local service = setmetatable({}, {
 	__index = function(self, name)
@@ -4697,6 +4695,7 @@ local EmbeddedModules = {
 
 					self.List = {obj}
 					self.Map = {[obj] = true}
+					local SelectionSignal = getSignal("Selection")
 					if SelectionSignal then
 						SelectionSignal:Fire(obj.Obj)
 					end
@@ -4710,6 +4709,7 @@ local EmbeddedModules = {
 					for i = 1,#t do
 						newMap[t[i]] = true
 					end
+					local SelectionSignal = getSignal("Selection")
 					if SelectionSignal then
 						local objects = {}
 						for _,v in next,t do
