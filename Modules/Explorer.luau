@@ -4636,7 +4636,10 @@ local EmbeddedModules = {
 
 			Lib.Set = (function()
 				local funcs = {}
-
+				
+				local SelectionSignal = getSignal("Selection")
+				local SetSelectionSignal = getSignal("SetSelection")
+				
 				funcs.Add = function(self,obj)
 					if self.Map[obj] then return end
 
@@ -4667,7 +4670,9 @@ local EmbeddedModules = {
 					local pos = table.find(list,obj)
 					if pos then table.remove(list,pos) end
 					self.Map[obj] = nil
-					self.Changed:Fire()
+					if SetSelectionSignal then
+						SetSelectionSignal:Fire(self, list, self.Map)
+					end
 				end
 
 				funcs.RemoveTable = function(self,t)
@@ -4687,17 +4692,17 @@ local EmbeddedModules = {
 							changed = true
 						end
 					end
-					if changed then self.Changed:Fire() end
+					
+					if SetSelectionSignal then
+						SetSelectionSignal:Fire(self, list, map)
+					end
 				end
 
 				funcs.Set = function(self,obj)
 					if #self.List == 1 and self.List[1] == obj then return end
 
-					self.List = {obj}
-					self.Map = {[obj] = true}
-					local SelectionSignal = getSignal("Selection")
-					if SelectionSignal then
-						SelectionSignal:Fire(obj.Obj)
+					if SetSelectionSignal then
+						SetSelectionSignal:Fire(self, {obj}, {[obj] = true})
 					end
 					self.Changed:Fire()
 				end
@@ -4709,23 +4714,39 @@ local EmbeddedModules = {
 					for i = 1,#t do
 						newMap[t[i]] = true
 					end
-					local SelectionSignal = getSignal("Selection")
-					if SelectionSignal then
-						local objects = {}
-						for _,v in next, t do
-							table.insert(objects, v.Obj)
-						end
-						SelectionSignal:Fire(objects)
+					
+					if SetSelectionSignal then
+						SetSelectionSignal:Fire(self, newList, newMap, t)
 					end
-					self.Changed:Fire()
 				end
 
 				funcs.Clear = function(self)
 					if #self.List == 0 then return end
-					self.List = {}
-					self.Map = {}
-					self.Changed:Fire()
+					if SetSelectionSignal then
+						SetSelectionSignal:Fire(self, {}, {})
+					end
 				end
+				
+				SetSelectionSignal:Connect(function(self, List, Map, Table)
+					self.List = List
+					self.Map = Map
+					if SelectionSignal then
+						if next(List) then
+							if Table then
+								local objects = {}
+								for _,v in next, Table do
+									table.insert(objects, v.Obj)
+								end
+								SelectionSignal:Fire(objects)
+							else
+								SelectionSignal:Fire(List[1].Obj)
+							end
+						else
+							SelectionSignal:Fire()
+						end
+					end
+					self.Changed:Fire()
+				end)
 
 				local mt = {__index = funcs}
 
