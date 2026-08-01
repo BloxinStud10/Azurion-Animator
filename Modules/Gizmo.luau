@@ -83,8 +83,12 @@ end))
 ------------------------------------------------------------------------------------------------------------------------
 local blacklistedClasses = {"Workspace", "Players", "ReplicatedStorage", "ReplicatedFirst", "SoundService", "Lighting", "Terrain", "Camera"}
 
+local isBlacklistedInstance = function(instance)
+	return table_find(blacklistedClasses, instance.ClassName)
+end
+
 local isAllowedClass = function(instance)
-	if not instance then
+	if not instance or isBlacklistedInstance(instance) then
 		return
 	end
 
@@ -109,12 +113,9 @@ local isAllowedClass = function(instance)
 	end
 end
 
-local isBlacklistedInstance = function(instance)
-	return table_find(blacklistedClasses, instance.ClassName)
-end
-
 local returnValidSelections = function(selection)
-	if type(selection) == "table" then
+	local type = typeof(selection)
+	if type == "table" then
 		local newSelection = {}
 		for _, instance in next, selection do
 			if typeof(instance) == "Instance" and (not isBlacklistedInstance(instance)) then
@@ -122,7 +123,7 @@ local returnValidSelections = function(selection)
 			end
 		end
 		return newSelection
-	elseif typeof(selection) == "Instance" then
+	elseif type == "Instance" then
 		return (not isBlacklistedInstance(selection)) and {selection} or {}
 	end
 	return {}
@@ -232,13 +233,19 @@ end
 -- Multi-Adornee support
 ------------------------------------------------------------------------------------------------------------------------
 local normalizeAdornees = function(adornees)
-	if adornees == nil then
-		return {}
-	end
-	if typeof(adornees) == "Instance" then
+	local type = typeof(adornees)
+	if type == "table" then
+		local newAdornees = {}
+		for _, adornee in next, adornees do
+			if not isBlacklistedInstance(adornee) then
+				table_insert(newAdornees, adornee)
+			end
+		end
+		return newAdornees
+	elseif type == "Instance" and (not isBlacklistedInstance(adornees)) then
 		return {adornees}
 	end
-	return adornees
+	return {}
 end
 
 local computeClasses = function(adornees)
