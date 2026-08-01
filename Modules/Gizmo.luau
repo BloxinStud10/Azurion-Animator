@@ -1,9 +1,10 @@
 --[=[
 	Sigma Gizmo :cool:
+	OOP based Handles/ArcHandles Gizmo
 ]=]--
 
 local configurations = {
-	MoveHandles = {
+	Move = {
 		shaftLength = 2.4,
 		tipLength = 0.9,
 		Radius = 0.1
@@ -12,15 +13,12 @@ local configurations = {
 
 local Instance_new = Instance.new
 local table_insert = table.insert
-local table_remove = table.remove
 local table_find = table.find
 local table_clear = table.clear
 local min = math.min
 local max = math.max
 local clamp = math.clamp
 local abs = math.abs
-local sin = math.sin
-local cos = math.cos
 local acos = math.acos
 local sqrt = math.sqrt
 local atan2 = math.atan2
@@ -47,7 +45,6 @@ local TIP_FLIP_CF = CFrame.new(0, 0, -0.45) * CFrame.fromEulerAngles(3.141592653
 
 local MouseButton1 = Enum.UserInputType.MouseButton1
 local Touch = Enum.UserInputType.Touch
-local MouseMovement = Enum.UserInputType.MouseMovement
 
 local global = shared or _G
 local ccontainer = rawget(global, "Azurion")
@@ -84,6 +81,8 @@ end))
 ------------------------------------------------------------------------------------------------------------------------
 -- Important tuffs
 ------------------------------------------------------------------------------------------------------------------------
+local blacklistedClasses = {"Workspace", "Players", "ReplicatedStorage", "ReplicatedFirst", "SoundService", "Lighting", "Terrain", "Camera"}
+
 local isAllowedClass = function(instance)
 	if not instance then
 		return
@@ -110,6 +109,25 @@ local isAllowedClass = function(instance)
 	end
 end
 
+local isBlacklistedInstance = function(instance)
+	return table_find(blacklistedClasses, instance.ClassName)
+end
+
+local returnValidSelections = function(selection)
+	if type(selection) == "table" then
+		local newSelection = {}
+		for _, instance in next, selection do
+			if typeof(instance) == "Instance" and (not isBlacklistedInstance(instance)) then
+				table_insert(newSelection, instance)
+			end
+		end
+		return newSelection
+	elseif typeof(selection) == "Instance" then
+		return (not isBlacklistedInstance(selection)) and {selection} or {}
+	end
+	return {}
+end
+
 local getAdorneeCFrame = function(adornee, class)
 	if class == "BasePart" then
 		return adornee.CFrame
@@ -119,22 +137,16 @@ local getAdorneeCFrame = function(adornee, class)
 		local part0, part1 = adornee.Part0, adornee.Part1
 		if part0 and part1 then
 			return part0.CFrame * adornee.C0 * adornee.Transform
-		else
-			return
 		end
 	elseif class == "Joint" then
 		local part0, part1 = adornee.Part0, adornee.Part1
 		if part0 and part1 then
 			return part0.CFrame * adornee.C0
-		else
-			return
 		end
 	elseif class == "AnimationConstraint" then
 		local att0, att1 = adornee.Attachment0, adornee.Attachment1
 		if att0 and att1 then
 			return att0.WorldCFrame * adornee.C0 * adornee.Transform
-		else
-			return
 		end
 	elseif class == "Attachment" or class == "Bone" then
 		return adornee.WorldCFrame
@@ -189,11 +201,11 @@ local getAxisOffset = function(adornee, axis)
 	elseif adornee:IsA("PVInstance") then
 		size = adornee:GetExtentsSize()
 	elseif adornee:IsA("JointInstance") then
-		size = vector_one * 4
+		size = vector_one * 3
 	elseif adornee:IsA("Constraint") then
-		size = vector_one * 4
+		size = vector_one * 3
 	elseif adornee:IsA("Attachment") then
-		size = vector_one * 4
+		size = vector_one * 3
 	end
 
 	return abs(axis.X) * size.X * 0.5 + abs(axis.Y) * size.Y * 0.5 + abs(axis.Z) * size.Z * 0.5
@@ -206,11 +218,11 @@ local getRadius = function(adornee)
 	elseif adornee:IsA("PVInstance") then
 		size = adornee:GetExtentsSize()
 	elseif adornee:IsA("JointInstance") then
-		size = vector_one * 4
+		size = vector_one * 3
 	elseif adornee:IsA("Constraint") then
-		size = vector_one * 4
+		size = vector_one * 3
 	elseif adornee:IsA("Attachment") then
-		size = vector_one * 4
+		size = vector_one * 3
 	end
 
 	return max(size.X, size.Y, size.Z) * 0.65
@@ -293,6 +305,15 @@ local computeAxisBasis = function(dir)
 	local right = vector_normalize(vector_cross(up, dir))
 	local realUp = vector_normalize(vector_cross(dir, right))
 	return right, realUp
+end
+
+local hasValidAdornee = function(adornees, classes)
+	for i, adornee in next, adornees do
+		if adornee and classes[i] then
+			return true
+		end
+	end
+	return false
 end
 
 local axisCFrame = function(dir, offset)
@@ -385,6 +406,51 @@ local getAxisVal = function(v, axisName)
 	return (axisName == "X" and v.X) or (axisName == "Y" and v.Y) or v.Z
 end
 
+local axisExtent = function(size, dir)
+	return abs(dir.X) * size.X + abs(dir.Y) * size.Y + abs(dir.Z) * size.Z
+end
+
+local withAxisAligned = function(size, dir, newValue)
+	local mask = vector_create(abs(dir.X), abs(dir.Y), abs(dir.Z))
+	local keep = vector_one - mask
+	return size * keep + mask * newValue
+end
+
+local GetArcballVector = function(mousePos, viewportSize)
+	local x = (mousePos.X / viewportSize.X) * 2 - 1
+	local y = 1 - (mousePos.Y / viewportSize.Y) * 2
+
+	local length2 = x*x + y*y
+
+	if length2 <= 1 then
+		return vector_create(x, y, sqrt(1 - length2))
+	else
+		local length = sqrt(length2)
+		return vector_create(x / length, y / length, 0)
+	end
+end
+
+local RotationBetween = function(v1, v2)
+	local axis = vector_cross(v1, v2)
+	local axisMag = vector_magnitude(axis)
+
+	local dot = clamp(vector_dot(v1, v2), -1, 1)
+
+	if axisMag < 1e-6 then
+		if dot < -0.999 then
+			local fallbackAxis = vector_cross(v1, vector_create(0, 1, 0))
+			if vector_magnitude(fallbackAxis) < 1e-6 then
+				fallbackAxis = vector_cross(v1, vector_create(1, 0, 0))
+			end
+			return CFrame_fromAxisAngle(vector_normalize(fallbackAxis), 3.141592653589793)
+		end
+		return CFrame_identity
+	end
+
+	local angle = acos(dot)
+	return CFrame_fromAxisAngle(vector_normalize(axis), angle)
+end
+
 ------------------------------------------------------------------------------------------------------------------------
 -- Adornment Watcher
 ------------------------------------------------------------------------------------------------------------------------
@@ -392,12 +458,8 @@ local Watcher = {}
 Watcher.__index = Watcher
 
 local watchers = {}
-local hoveredWatcher = nil
-local activeDragWatcher = nil
-
-local inputChangedConn = nil
-local inputBeganConn = nil
-local inputEndedConn = nil
+local hoveredWatcher, activeDragWatcher
+local inputChangedConn, inputBeganConn, inputEndedConn
 
 local function rayHitBoxAxis(o, d, h, tMin, tMax)
 	if abs(d) < 1e-8 then
@@ -460,7 +522,7 @@ end
 
 local findBestHit = function()
 	local ro, rd = mouseRay()
-	local best = nil
+	local best
 	local bestT = math.huge
 
 	for w in next, watchers do
@@ -516,7 +578,7 @@ local watchdogCheckDrag = function()
 	end
 end
 
-local onHeartbeat = function()
+local onInputChanged = function()
 	if activeDragWatcher then
 		local ro, rd = mouseRay()
 		activeDragWatcher.DragChanged:Fire(ro, rd)
@@ -559,7 +621,7 @@ end
 
 local ensureConnected = function()
 	if not inputChangedConn then
-		inputChangedConn = UserInputService.InputChanged:Connect(onHeartbeat)
+		inputChangedConn = UserInputService.InputChanged:Connect(onInputChanged)
 	end
 	if not inputBeganConn then
 		inputBeganConn = UserInputService.InputBegan:Connect(onInputBegan)
@@ -866,71 +928,45 @@ end
 ------------------------------------------------------------------------------------------------------------------------
 -- Move Handles
 ------------------------------------------------------------------------------------------------------------------------
-local MoveHandles = {}
-MoveHandles.__index = MoveHandles
+local Move = {}
+local MoveInstance = {}
 
-function MoveHandles.new(adornees)
-	local self = setmetatable({}, MoveHandles)
-	self.Adornees = normalizeAdornees(adornees)
-	self.Classes = computeClasses(self.Adornees)
-	self.PrimaryIndex = #self.Adornees
-	self._activeCFrames = {}
-	self._activeCount = 0
-	self._visible = true
-	self._holder = newHolder("MoveHandles", GizmoFolder)
-	self._watchers = {}
-	self._pieces = {}
-	self._conns = {}
-	self._dragConns = {}
-	self.isWorldSpace = false
-	self._dragging = false
-
-	self.Began = CreateSignal()
-	self.Changed = CreateSignal()
-	self.Ended = CreateSignal()
-	self.MouseEnter = CreateSignal()
-	self.MouseLeave = CreateSignal()
-
-	for _, axis in next, Axes do
-		self:_buildAxis(axis)
+MoveInstance.__index = function(self, a)
+	local method = MoveInstance[a]
+	if method ~= nil then
+		return method
 	end
-
-	local originsphere = Instance_new("SphereHandleAdornment")
-	originsphere.Name = "origin"
-	originsphere.Adornee = self._holder
-	originsphere.AlwaysOnTop = true
-	originsphere.Color3 = Color3_fromRGB(240, 160, 25)
-	originsphere.ZIndex = 0
-	originsphere.Radius = 0.1
-	originsphere.Transparency = 0.4
-	originsphere.Parent = self._holder
-
-	self._originsphere = originsphere
-
-	self:_syncHolder()
-	self._heartbeatConn = Heartbeat:Connect(function()
-		self:_syncHolder()
-	end)
-
-	return self
+	return rawget(self, "_data")[a]
+end
+MoveInstance.__newindex = function(self, a, b)
+	local data = rawget(self, "_data")
+	if data then
+		local old = data[a]
+		if old ~= b then
+			data[a] = b
+			rawget(self, "Changed"):Fire(a, b)
+		end
+	else
+		rawset(self, a, b)
+	end
 end
 
-function MoveHandles:_syncHolder()
-	if self._visible then
-		local pivotCF, cframes, count = getPivotCFrame(self.Adornees, self.Classes, self.PrimaryIndex, self.isWorldSpace)
+MoveInstance.SyncHolder = function(self)
+	if rawget(self, "_data").Visible then
+		local pivotCF, cframes, count = getPivotCFrame(self._adornees, self._classes, self._primaryIndex, self._isWorldSpace)
 		self._activeCFrames = cframes
 		self._activeCount = count
 		if pivotCF then
 			self._holder.CFrame = pivotCF
-			self:_updateHandlePositions()
+			self:Update()
 		end
 	end
 end
 
-function MoveHandles:_buildAxis(axis)
-	local configuration = configurations.MoveHandles
+MoveInstance.Build = function(self, axis)
+	local configuration = configurations.Move
 	local shaftLen, tipLen, radius = configuration.shaftLength, configuration.tipLength, configuration.Radius
-
+	
 	local inputbox = Instance_new("BoxHandleAdornment")
 	inputbox.Name = axis.name .. "_InputBox"
 	inputbox.Adornee = self._holder
@@ -964,13 +1000,13 @@ function MoveHandles:_buildAxis(axis)
 	tip.CFrame = axisCFrame(axis.dir, shaftLen + tipLen / 2) * TIP_FLIP_CF
 	tip.Parent = self._holder
 
-	self._pieces[axis.name] = {
+	self._adornments[axis.name] = {
 		inputbox = inputbox,
 		shaft = shaft,
 		tip = tip,
 		axis = axis
 	}
-
+	
 	local watcher = Watcher.Watch(inputbox, {
 		Draggable = true,
 		Padding = 0.5
@@ -982,64 +1018,66 @@ function MoveHandles:_buildAxis(axis)
 		shaft.Color3 = c
 		tip.Color3 = c
 	end
+	
+	local Data = rawget(self, "_data")
 
 	table_insert(self._conns, watcher.MouseEnter:Connect(function()
-		if self._visible then
+		if Data.Visible then
 			highlight(true)
-			self.MouseEnter:Fire(axis.name)
+			Data.MouseEnter:Fire(axis.name)
 		end
 	end))
 	table_insert(self._conns, watcher.MouseLeave:Connect(function()
 		highlight(false)
-		if self._visible then
-			self.MouseLeave:Fire(axis.name)
+		if Data.Visible then
+			Data.MouseLeave:Fire(axis.name)
 		end
 	end))
 	table_insert(self._conns, watcher.MouseButton1Down:Connect(function(input)
-		if self._visible then
+		if Data.Visible then
 			highlight(true)
 			local type = input.UserInputType
-			if (type == MouseButton1 or type == Touch) and self._visible then
-				self:_beginDrag(axis, highlight)
+			if (type == MouseButton1 or type == Touch) then
+				self:OnDragBegan(axis, highlight)
 			end
 		end
 	end))
 	table_insert(self._conns, watcher.MouseButton1Up:Connect(function()
 		highlight(false)
 		if self._dragging then
-			self.Ended:Fire(axis.name)
+			Data.InputEnded:Fire(axis.name)
 		end
 	end))
 end
 
-function MoveHandles:_updateHandlePositions()
-	if #self.Adornees == 0 then
+MoveInstance.Update = function(self)
+	if #self._adornees == 0 then
 		return
 	end
 
-	for _, data in next, self._pieces do
+	for _, data in next, self._adornments do
 		local axis = data.axis
 		local inputbox = data.inputbox
 		local shaft = data.shaft
 		local tip = data.tip
 
-		local offset = getGroupAxisOffset(self.Adornees, axis.dir) + 0.5
+		local offset = getGroupAxisOffset(self._adornees, axis.dir) + 0.5
 
 		shaft.CFrame = axisCFrameFast(axis.dir, axis.right, axis.up, offset + shaft.Height * 0.5)
 		tip.CFrame = axisCFrameFast(axis.dir, axis.right, axis.up, offset + shaft.Height + tip.Height * 0.5) * TIP_FLIP_CF
 
 		local overallHeight = shaft.Height + tip.Height
-		local radius = configurations.MoveHandles.Radius
+		local radius = configurations.Move.Radius
 
 		inputbox.Size = vector_create(radius * 5, radius * 5, overallHeight)
 		inputbox.CFrame = axisCFrameFast(axis.dir, axis.right, axis.up, offset + overallHeight * 0.5)
 	end
 end
 
-function MoveHandles:_setOtherAxesVisible(activeAxisName, visible)
-	for name, p in next, self._pieces do
+MoveInstance.SetAdornmentsVisible = function(self, exceptions, visible)
+	for name, p in next, self._adornments do
 		local inputbox, shaft, tip = p.inputbox, p.shaft, p.tip
-		if name ~= activeAxisName then
+		if not table_find(exceptions, name) then
 			shaft.Visible = visible
 			tip.Visible = visible
 			inputbox.Visible = visible
@@ -1047,26 +1085,28 @@ function MoveHandles:_setOtherAxesVisible(activeAxisName, visible)
 	end
 end
 
-function MoveHandles:_beginDrag(axis, highlight)
+MoveInstance.OnDragBegan = function(self, axis, highlight)
 	if self._dragging then return end
 	self._dragging = true
-	self:_setOtherAxesVisible(axis.name, false)
+	self:SetAdornmentsVisible({axis.name}, false)
 
 	local startCFrames = self._activeCFrames
 	if not startCFrames or (self._activeCount or 0) == 0 then
 		self._dragging = false
-		self:_setOtherAxesVisible(axis.name, true)
+		self:SetAdornmentsVisible({axis.name}, true)
 		return
 	end
+	
+	local Data = rawget(self, "_data")
 
 	local pivotStartCFrame = self._holder.CFrame
-	local worldDir = self.isWorldSpace and vector_normalize(axis.dir) or vector_normalize(pivotStartCFrame:VectorToWorldSpace(axis.dir))
+	local worldDir = self._isWorldSpace and vector_normalize(axis.dir) or vector_normalize(pivotStartCFrame:VectorToWorldSpace(axis.dir))
 	local origin = pivotStartCFrame.Position
 
 	local ro, rd = mouseRay()
 	local startT = closestT(origin, worldDir, ro, rd)
 
-	self.Began:Fire(axis.name)
+	Data.InputBegan:Fire(axis.name)
 
 	local watcher = self._watchers[axis.name]
 
@@ -1074,16 +1114,16 @@ function MoveHandles:_beginDrag(axis, highlight)
 		local t = closestT(origin, worldDir, o2, d2)
 		local delta = worldDir * (t - startT)
 
-		for i, adornee in next, self.Adornees do
-			local class = self.Classes[i]
+		for i, adornee in next, self._adornees do
+			local class = self._classes[i]
 			local startCF = startCFrames[i]
 			if adornee and class and startCF then
 				applyCFrame(adornee, class, startCF + delta)
 			end
 		end
 
-		self:_syncHolder()
-		self.Changed:Fire(axis.name, delta)
+		self:SyncHolder()
+		Data.InputChanged:Fire(axis.name, delta)
 	end)
 
 	local upConn
@@ -1092,9 +1132,9 @@ function MoveHandles:_beginDrag(axis, highlight)
 		upConn:Disconnect()
 		self._dragging = false
 		highlight(false)
-		if self._visible then
-			self:_setOtherAxesVisible(axis.name, true)
-			self.Ended:Fire(axis.name)
+		if self.Visible then
+			self:SetAdornmentsVisible({axis.name}, true)
+			Data.InputEnded:Fire(axis.name)
 		end
 	end)
 
@@ -1102,32 +1142,40 @@ function MoveHandles:_beginDrag(axis, highlight)
 	table_insert(self._dragConns, upConn)
 end
 
-function MoveHandles:SetAdornees(adornees)
-	self.Adornees = normalizeAdornees(adornees)
-	self.Classes = computeClasses(self.Adornees)
-	self.PrimaryIndex = #self.Adornees
-	if self._visible then
-		self:_setOtherAxesVisible("", true)
+MoveInstance.OnChanged = function(self, name, value)
+	if name == "Adornee" then
+		if rawget(self, "_data").Visible then
+			if type(value) == "table" then
+				if next(value) then
+					self:SetAdornmentsVisible({}, true)
+					self._originpoint.Visible = true
+				else
+					self:SetAdornmentsVisible({}, false)
+					self._originpoint.Visible = false
+				end
+			elseif typeof(value) == "Instance" then
+				self:SetAdornmentsVisible({}, true)
+				self._originpoint.Visible = true
+			else
+				self:SetAdornmentsVisible({}, false)
+				self._originpoint.Visible = false
+			end
+		end
+		self._adornees = normalizeAdornees(value)
+		self._classes = computeClasses(self._adornees)
+		self._primaryIndex = #self._adornees
+		self:SyncHolder()
+	elseif name == "AxisType" then
+		self._isWorldSpace = (value == "World")
+		self:SyncHolder()
+	elseif name == "Visible" then
+		self:SetAdornmentsVisible({}, value)
+		self._originpoint.Visible = value
+		self:SyncHolder()
 	end
-	self:_syncHolder()
 end
 
-function MoveHandles:SetAdornee(adornee)
-	self:SetAdornees(adornee and {adornee} or {})
-end
-
-function MoveHandles:SetVisible(bool)
-	self._visible = bool
-	self:_setOtherAxesVisible("", bool)
-	self._originsphere.Visible = bool
-end
-
-function MoveHandles:SetWorldSpace(bool)
-	self.isWorldSpace = bool
-	self:_syncHolder()
-end
-
-function MoveHandles:Destroy()
+MoveInstance.Destroy = function(self)
 	for _, c in next, self._conns do c:Disconnect() end
 	for _, c in next, self._dragConns do c:Disconnect() end
 	for _, i in next, self._watchers do i:Destroy() end
@@ -1138,84 +1186,118 @@ function MoveHandles:Destroy()
 
 	table_clear(self._conns)
 	table_clear(self._dragConns)
-	table_clear(self._pieces)
+	table_clear(self._adornments)
 	table_clear(self._watchers)
-
-	self.Began:Destroy()
-	self.Changed:Destroy()
-	self.Ended:Destroy()
-	self.MouseEnter:Destroy()
-	self.MouseLeave:Destroy()
+	
+	local Data = rawget(self, "_data")
+	Data.InputBegan:Destroy()
+	Data.InputChanged:Destroy()
+	Data.InputEnded:Destroy()
+	Data.MouseEnter:Destroy()
+	Data.MouseLeave:Destroy()
 
 	table_clear(self)
 	setmetatable(self, nil)
 end
 
-------------------------------------------------------------------------------------------------------------------------
--- Rotate Handles
-------------------------------------------------------------------------------------------------------------------------
-local RotateHandles = {}
-RotateHandles.__index = RotateHandles
-
-function RotateHandles.new(adornees)
-	local self = setmetatable({}, RotateHandles)
-	self.Adornees = normalizeAdornees(adornees)
-	self.Classes = computeClasses(self.Adornees)
-	self.PrimaryIndex = #self.Adornees
+function Move.new()
+	local self = setmetatable({}, MoveInstance)
+	self.Changed = CreateSignal()
+	
+	self._data = {
+		ClassName = "Move",
+		Adornee = nil,
+		Visible = true,
+		AxisType = "Object",
+		InputBegan = CreateSignal(),
+		InputChanged = CreateSignal(),
+		InputEnded = CreateSignal(),
+		MouseEnter = CreateSignal(),
+		MouseLeave = CreateSignal()
+	}
+	self._adornees = {}
+	self._classes = {}
+	self._primaryIndex = 0
 	self._activeCFrames = {}
 	self._activeCount = 0
-	self._visible = false
-	self._holder = newHolder("RotateHandles", GizmoFolder)
-	self._rings = {}
+	self._holder = newHolder("Move", GizmoFolder)
 	self._conns = {}
 	self._dragConns = {}
+	self._adornments = {}
+	self._lastTouchCount = 0
+	self._isWorldSpace = false
 	self._watchers = {}
-	self.isWorldSpace = false
 	self._dragging = false
 
-	self.Began = CreateSignal()
-	self.Changed = CreateSignal()
-	self.Ended = CreateSignal()
-	self.MouseEnter = CreateSignal()
-	self.MouseLeave = CreateSignal()
-
-	for _, axis in next, RotateAxes do
-		self:_buildRing(axis)
+	for _, axis in next, Axes do
+		self:Build(axis)
 	end
-
-	local originsphere = Instance_new("SphereHandleAdornment")
-	originsphere.Name = "origin"
-	originsphere.Adornee = self._holder
-	originsphere.AlwaysOnTop = true
-	originsphere.Color3 = Color3_fromRGB(240, 160, 25)
-	originsphere.ZIndex = 0
-	originsphere.Radius = 0.1
-	originsphere.Transparency = 0.4
-	originsphere.Parent = self._holder
-
-	self._originsphere = originsphere
-
-	self:_syncHolder()
+	
+	local origin = Instance_new("SphereHandleAdornment")
+	origin.Name = "origin"
+	origin.Adornee = self._holder
+	origin.AlwaysOnTop = true
+	origin.Color3 = Color3_fromRGB(240, 160, 25)
+	origin.ZIndex = 0
+	origin.Radius = 0.1
+	origin.Transparency = 0.4
+	origin.Visible = false
+	origin.Parent = self._holder
+	self._originpoint = origin
+	
+	self:SetAdornmentsVisible({}, false)
+	
+	self:SyncHolder()
 	self._heartbeatConn = Heartbeat:Connect(function()
-		self:_syncHolder()
+		self:SyncHolder()
+	end)
+	
+	self.Changed:Connect(function(...)
+		self:OnChanged(...)
 	end)
 
 	return self
 end
 
-function RotateHandles:_syncHolder()
-	if self._visible then
-		local pivotCF, cframes, count = getPivotCFrame(self.Adornees, self.Classes, self.PrimaryIndex, self.isWorldSpace)
+------------------------------------------------------------------------------------------------------------------------
+-- Rotate Handles
+------------------------------------------------------------------------------------------------------------------------
+local Rotate = {}
+local RotateInstance = {}
+
+RotateInstance.__index = function(self, a)
+	local method = RotateInstance[a]
+	if method ~= nil then
+		return method
+	end
+	return rawget(self, "_data")[a]
+end
+RotateInstance.__newindex = function(self, a, b)
+	local data = rawget(self, "_data")
+	if data then
+		local old = data[a]
+		if old ~= b then
+			data[a] = b
+			rawget(self, "Changed"):Fire(a, b)
+		end
+	else
+		rawset(self, a, b)
+	end
+end
+
+RotateInstance.SyncHolder = function(self)
+	if rawget(self, "_data").Visible then
+		local pivotCF, cframes, count = getPivotCFrame(self._adornees, self._classes, self._primaryIndex, self._isWorldSpace)
 		self._activeCFrames = cframes
 		self._activeCount = count
 		if pivotCF then
 			self._holder.CFrame = pivotCF
-			self:_updateRings()
+			self:Update()
 		end
 	end
 end
 
-function RotateHandles:_buildRing(axis)
+RotateInstance.Build = function(self, axis)
 	local radius = 3
 
 	local up = abs(axis.dir.Y) < 0.99 and vector_create(0, 1, 0) or vector_create(1, 0, 0)
@@ -1240,7 +1322,7 @@ function RotateHandles:_buildRing(axis)
 	knob.Transparency = 0.2
 	knob.Parent = self._holder
 
-	self._rings[axis.name] = {
+	self._adornments[axis.name] = {
 		ring = ring,
 		knob = knob,
 		axis = axis
@@ -1255,46 +1337,48 @@ function RotateHandles:_buildRing(axis)
 	local highlight = function(on)
 		knob.Color3 = on and Color3_new(1, 1, 1) or axis.color
 	end
+	
+	local Data = rawget(self, "_data")
 
 	table_insert(self._conns, watcher.MouseEnter:Connect(function()
-		if self._visible then
+		if Data.Visible then
 			highlight(true)
-			self.MouseEnter:Fire(axis.name)
+			Data.MouseEnter:Fire(axis.name)
 		end
 	end))
 	table_insert(self._conns, watcher.MouseLeave:Connect(function()
 		highlight(false)
-		if self._visible then
-			self.MouseLeave:Fire(axis.name)
+		if Data.Visible then
+			Data.MouseLeave:Fire(axis.name)
 		end
 	end))
 	table_insert(self._conns, watcher.MouseButton1Down:Connect(function(input)
-		if self._visible then
+		if Data.Visible then
 			highlight(true)
 			local type = input.UserInputType
-			if (type == MouseButton1 or type == Touch) and self._visible then
-				self:_beginDrag(axis, u, v, radius, highlight)
+			if (type == MouseButton1 or type == Touch) and Data.Visible then
+				self:OnDragBegan(axis, u, v, radius, highlight)
 			end
 		end
 	end))
 	table_insert(self._conns, watcher.MouseButton1Up:Connect(function()
 		highlight(false)
 		if self._dragging then
-			self.Ended:Fire(axis.name)
+			Data.InputEnded:Fire(axis.name)
 		end
 	end))
 end
 
-function RotateHandles:_updateRings()
-	if #self.Adornees == 0 then
+RotateInstance.Update = function(self)
+	if #self._adornees == 0 then
 		return
 	end
 
-	local radius = getGroupRadius(self.Adornees) + 1
+	local radius = getGroupRadius(self._adornees) + 1
 	local thickness = radius * 0.045
 	local handleRadius = radius * 0.08
 
-	for _, data in next, self._rings do
+	for _, data in next, self._adornments do
 		local ring = data.ring
 		local knob = data.knob
 		local axis = data.axis
@@ -1310,31 +1394,31 @@ function RotateHandles:_updateRings()
 	end
 end
 
-function RotateHandles:_setOtherRingsVisible(activeAxisName, visible)
-	for name, p in next, self._rings do
+RotateInstance.SetAdornmentsVisible = function(self, exceptions, visible)
+	for name, p in next, self._adornments do
 		local ring, knob = p.ring, p.knob
-		if name ~= activeAxisName then
+		if not table_find(exceptions, name) then
 			ring.Visible = visible
 			knob.Visible = visible
 		end
 	end
 end
 
-function RotateHandles:_beginDrag(axis, u, v, radius, highlight)
+RotateInstance.OnDragBegan = function(self, axis, u, v, radius, highlight)
 	if self._dragging then return end
 	self._dragging = true
-	self:_setOtherRingsVisible(axis.name, false)
+	self:SetAdornmentsVisible({axis.name}, false)
 
 	local startCFrames = self._activeCFrames
 	if not startCFrames or (self._activeCount or 0) == 0 then
 		self._dragging = false
-		self:_setOtherRingsVisible(axis.name, true)
+		self:SetAdornmentsVisible({axis.name}, true)
 		return
 	end
 
 	local pivotStartCFrame = self._holder.CFrame
 	local center = pivotStartCFrame.Position
-	local forceWorld = self.isWorldSpace or (self._activeCount or 0) > 1
+	local forceWorld = self._isWorldSpace or (self._activeCount or 0) > 1
 
 	local worldNormal, worldU, worldV
 	if forceWorld then
@@ -1357,10 +1441,13 @@ function RotateHandles:_beginDrag(axis, u, v, radius, highlight)
 	local ro, rd = mouseRay()
 	local startAngle = angleAt(ro, rd) or 0
 	local lastAngle = startAngle
+	
+	local Data = rawget(self, "_data")
 
-	self.Began:Fire(axis.name)
+	Data.InputBegan:Fire(axis.name)
 
 	local watcher = self._watchers[axis.name]
+	local Data = rawget(self, "_data")
 
 	local moveConn = watcher.DragChanged:Connect(function(o2, d2)
 		local ang = angleAt(o2, d2)
@@ -1372,8 +1459,8 @@ function RotateHandles:_beginDrag(axis, u, v, radius, highlight)
 		if step < -pi then step += pi * 2 end
 		lastAngle = ang
 
-		for i, adornee in next, self.Adornees do
-			local class = self.Classes[i]
+		for i, adornee in next, self._adornees do
+			local class = self._classes[i]
 			local startCF = startCFrames[i]
 			if adornee and class and startCF then
 				local newCF
@@ -1387,8 +1474,8 @@ function RotateHandles:_beginDrag(axis, u, v, radius, highlight)
 			end
 		end
 
-		self:_syncHolder()
-		self.Changed:Fire(axis.name, step)
+		self:SyncHolder()
+		Data.InputChanged:Fire(axis.name, step)
 	end)
 
 	local upConn
@@ -1397,9 +1484,9 @@ function RotateHandles:_beginDrag(axis, u, v, radius, highlight)
 		upConn:Disconnect()
 		self._dragging = false
 		highlight(false)
-		if self._visible then
-			self:_setOtherRingsVisible(axis.name, true)
-			self.Ended:Fire(axis.name)
+		if Data.Visible then
+			self:SetAdornmentsVisible({axis.name}, true)
+			Data.InputEnded:Fire(axis.name)
 		end
 	end)
 
@@ -1407,32 +1494,40 @@ function RotateHandles:_beginDrag(axis, u, v, radius, highlight)
 	table_insert(self._dragConns, upConn)
 end
 
-function RotateHandles:SetAdornees(adornees)
-	self.Adornees = normalizeAdornees(adornees)
-	self.Classes = computeClasses(self.Adornees)
-	self.PrimaryIndex = #self.Adornees
-	if self._visible then
-		self:_setOtherRingsVisible("", true)
+RotateInstance.OnChanged = function(self, name, value)
+	if name == "Adornee" then
+		if rawget(self, "_data").Visible then
+			if type(value) == "table" then
+				if next(value) then
+					self:SetAdornmentsVisible({}, true)
+					self._originpoint.Visible = true
+				else
+					self:SetAdornmentsVisible({}, false)
+					self._originpoint.Visible = false
+				end
+			elseif typeof(value) == "Instance" then
+				self:SetAdornmentsVisible({}, true)
+				self._originpoint.Visible = true
+			else
+				self:SetAdornmentsVisible({}, false)
+				self._originpoint.Visible = false
+			end
+		end
+		self._adornees = normalizeAdornees(value)
+		self._classes = computeClasses(self._adornees)
+		self._primaryIndex = #self._adornees
+		self:SyncHolder()
+	elseif name == "AxisType" then
+		self._isWorldSpace = (value == "World")
+		self:SyncHolder()
+	elseif name == "Visible" then
+		self:SetAdornmentsVisible({}, value)
+		self._originpoint.Visible = value
+		self:SyncHolder()
 	end
-	self:_syncHolder()
 end
 
-function RotateHandles:SetAdornee(adornee)
-	self:SetAdornees(adornee and {adornee} or {})
-end
-
-function RotateHandles:SetVisible(bool)
-	self._visible = bool
-	self:_setOtherRingsVisible("", bool)
-	self._originsphere.Visible = bool
-end
-
-function RotateHandles:SetWorldSpace(bool)
-	self.isWorldSpace = bool
-	self:_syncHolder()
-end
-
-function RotateHandles:Destroy()
+RotateInstance.Destroy = function(self)
 	for _, c in next, self._conns do c:Disconnect() end
 	for _, c in next, self._dragConns do c:Disconnect() end
 	if self._heartbeatConn then self._heartbeatConn:Disconnect() end
@@ -1442,81 +1537,123 @@ function RotateHandles:Destroy()
 
 	table_clear(self._conns)
 	table_clear(self._dragConns)
-	table_clear(self._rings)
+	table_clear(self._adornments)
 	table_clear(self._watchers)
-
-	self.Began:Destroy()
-	self.Changed:Destroy()
-	self.Ended:Destroy()
-	self.MouseEnter:Destroy()
-	self.MouseLeave:Destroy()
+	
+	local Data = rawget(self, "_data")
+	Data.InputBegan:Destroy()
+	Data.InputChanged:Destroy()
+	Data.InputEnded:Destroy()
+	Data.MouseEnter:Destroy()
+	Data.MouseLeave:Destroy()
 
 	table_clear(self)
 	setmetatable(self, nil)
 end
 
-------------------------------------------------------------------------------------------------------------------------
--- Resize Handles
-------------------------------------------------------------------------------------------------------------------------
-local ResizeHandles = {}
-ResizeHandles.__index = ResizeHandles
-
-local axisExtent = function(size, dir)
-	return abs(dir.X) * size.X + abs(dir.Y) * size.Y + abs(dir.Z) * size.Z
-end
-
-local withAxisAligned = function(size, dir, newValue)
-	local mask = vector_create(abs(dir.X), abs(dir.Y), abs(dir.Z))
-	local keep = vector_one - mask
-	return size * keep + mask * newValue
-end
-
-function ResizeHandles.new(adornees)
-	local self = setmetatable({}, ResizeHandles)
-	self.Adornees = normalizeAdornees(adornees)
-	self.PrimaryIndex = #self.Adornees
-	self._visible = true
-	self._holder = newHolder("ResizeHandles", GizmoFolder)
-	self._cubes = {}
+function Rotate.new()
+	local self = setmetatable({}, RotateInstance)
+	self.Changed = CreateSignal()
+	
+	self._data = {
+		ClassName = "Rotate",
+		Adornee = nil,
+		Visible = true,
+		AxisType = "Object",
+		InputBegan = CreateSignal(),
+		InputChanged = CreateSignal(),
+		InputEnded = CreateSignal(),
+		MouseEnter = CreateSignal(),
+		MouseLeave = CreateSignal()
+	}
+	self._adornees = {}
+	self._classes = {}
+	self._primaryIndex = 0
+	self._activeCFrames = {}
+	self._activeCount = 0
+	self._holder = newHolder("Rotate", GizmoFolder)
 	self._conns = {}
 	self._dragConns = {}
+	self._adornments = {}
+	self._lastTouchCount = 0
+	self._isWorldSpace = false
 	self._watchers = {}
 	self._dragging = false
 
-	local primary = self:_primaryAdornee()
-	self.isValid = primary ~= nil and primary:IsA("BasePart")
-
-	self.Began = CreateSignal()
-	self.Changed = CreateSignal()
-	self.Ended = CreateSignal()
-	self.MouseEnter = CreateSignal()
-	self.MouseLeave = CreateSignal()
-
-	for _, axis in next, ResizeAxes do
-		self:_buildHandle(axis)
+	for _, axis in next, RotateAxes do
+		self:Build(axis)
 	end
-
-	self:_syncHolder()
+	
+	local origin = Instance_new("SphereHandleAdornment")
+	origin.Name = "origin"
+	origin.Adornee = self._holder
+	origin.AlwaysOnTop = true
+	origin.Color3 = Color3_fromRGB(240, 160, 25)
+	origin.ZIndex = 0
+	origin.Radius = 0.1
+	origin.Transparency = 0.4
+	origin.Visible = false
+	origin.Parent = self._holder
+	self._originpoint = origin
+	
+	self:SetAdornmentsVisible({}, false)
+	
+	self:SyncHolder()
 	self._heartbeatConn = Heartbeat:Connect(function()
-		self:_syncHolder()
+		self:SyncHolder()
+	end)
+	
+	self.Changed:Connect(function(...)
+		self:OnChanged(...)
 	end)
 
 	return self
 end
 
-function ResizeHandles:_primaryAdornee()
-	return self.Adornees[self.PrimaryIndex]
-end
+------------------------------------------------------------------------------------------------------------------------
+-- Resize Handles
+------------------------------------------------------------------------------------------------------------------------
+local Resize = {}
+local ResizeInstance = {}
 
-function ResizeHandles:_syncHolder()
-	local primary = self:_primaryAdornee()
-	if self._visible and primary and self.isValid then
-		self._holder.CFrame = primary.CFrame
-		self:_reposition()
+ResizeInstance.__index = function(self, a)
+	local method = ResizeInstance[a]
+	if method ~= nil then
+		return method
+	end
+	return rawget(self, "_data")[a]
+end
+ResizeInstance.__newindex = function(self, a, b)
+	local data = rawget(self, "_data")
+	if data then
+		local old = data[a]
+		if old ~= b then
+			data[a] = b
+			rawget(self, "Changed"):Fire(a, b)
+		end
+	else
+		rawset(self, a, b)
 	end
 end
 
-function ResizeHandles:_buildHandle(axis)
+ResizeInstance._primaryAdornee = function(self)
+	if next(self._adornees) then
+		return self._adornees[self._primaryIndex]
+	end
+end
+
+ResizeInstance.SyncHolder = function(self)
+	local data = rawget(self, "_data")
+	if data.Visible and self.isValid then
+		local primary = self:_primaryAdornee()
+		if primary then
+			self._holder.CFrame = primary.CFrame
+			self:Update()
+		end
+	end
+end
+
+ResizeInstance.Build = function(self, axis)
 	local cube = Instance_new("BoxHandleAdornment")
 	cube.Name = axis.name
 	cube.Adornee = self._holder
@@ -1526,7 +1663,7 @@ function ResizeHandles:_buildHandle(axis)
 	cube.ZIndex = 1
 	cube.Parent = self._holder
 
-	self._cubes[axis.name] = {
+	self._adornments[axis.name] = {
 		cube = cube,
 		axis = axis
 	}
@@ -1542,65 +1679,74 @@ function ResizeHandles:_buildHandle(axis)
 		cube.Size = vector_one * (on and 0.5 or 0.4)
 	end
 
+	local Data = rawget(self, "_data")
+
 	table_insert(self._conns, watcher.MouseEnter:Connect(function()
-		if self._visible then
+		if Data.Visible then
 			highlight(true)
-			self.MouseEnter:Fire(axis.name)
+			Data.MouseEnter:Fire(axis.name)
 		end
 	end))
 	table_insert(self._conns, watcher.MouseLeave:Connect(function()
 		highlight(false)
-		if self._visible then
-			self.MouseLeave:Fire(axis.name)
+		if Data.Visible then
+			Data.MouseLeave:Fire(axis.name)
 		end
 	end))
 	table_insert(self._conns, watcher.MouseButton1Down:Connect(function(input)
-		if self._visible then
+		if Data.Visible then
 			highlight(true)
 			local type = input.UserInputType
-			if (type == MouseButton1 or type == Touch) and self._visible then
-				self:_beginDrag(axis, highlight)
+			if (type == MouseButton1 or type == Touch) and Data.Visible then
+				self:OnDragBegan(axis, highlight)
 			end
 		end
 	end))
 	table_insert(self._conns, watcher.MouseButton1Up:Connect(function()
 		highlight(false)
 		if self._dragging then
-			self.Ended:Fire(axis.name)
+			Data.InputEnded:Fire(axis.name)
 		end
 	end))
 
-	self:_reposition()
+	self:Update()
 end
 
-function ResizeHandles:_reposition()
+ResizeInstance.Update = function(self)
 	local primary = self:_primaryAdornee()
 	if not primary then
 		return
 	end
 
-	for _, c in next, self._cubes do
+	for _, c in next, self._adornments do
 		local axis = c.axis
 		local offset = getAxisOffset(primary, axis.dir) + 0.5
 		c.cube.CFrame = axisCFrameFast(axis.dir, axis.right, axis.up, offset)
 	end
 end
 
-function ResizeHandles:_setOtherAxesVisible(activeAxisName, visible)
-	for _, c in next, self._cubes do
-		if c.axis.name ~= activeAxisName then
-			c.cube.Visible = visible
+ResizeInstance.SetAdornmentsVisible = function(self, exceptions, bool)
+	exceptions = exceptions or {}
+	for name, c in next, self._adornments do
+		if not table_find(exceptions, name) then
+			c.cube.Visible = bool
 		end
 	end
 end
 
-function ResizeHandles:_beginDrag(axis, highlight)
+ResizeInstance.OnDragBegan = function(self, axis, highlight)
 	if self._dragging then return end
 	self._dragging = true
-	self:_setOtherAxesVisible(axis.name, false)
+	self:SetAdornmentsVisible({axis.name}, false)
 
 	local primary = self:_primaryAdornee()
-	if not primary then return end
+	if not primary then
+		self._dragging = false
+		self:SetAdornmentsVisible({axis.name}, true)
+		return
+	end
+
+	local Data = rawget(self, "_data")
 
 	local startCFrame = primary.CFrame
 	local startSize = primary.Size
@@ -1610,7 +1756,7 @@ function ResizeHandles:_beginDrag(axis, highlight)
 	local ro, rd = mouseRay()
 	local startT = closestT(faceCenter, worldNormal, ro, rd)
 
-	self.Began:Fire(axis.name)
+	Data.InputBegan:Fire(axis.name)
 
 	local watcher = self._watchers[axis.name]
 	local startAxisSize = axisExtent(startSize, axis.dir)
@@ -1624,9 +1770,9 @@ function ResizeHandles:_beginDrag(axis, highlight)
 
 		primary.Size = withAxisAligned(startSize, axis.dir, newAxisSize)
 		primary.CFrame = startCFrame * CFrame_new(axis.dir * (appliedDelta / 2))
-		self:_syncHolder()
+		self:SyncHolder()
 
-		self.Changed:Fire(axis.name, primary.Size)
+		Data.InputChanged:Fire(axis.name, primary.Size)
 	end)
 
 	local upConn
@@ -1635,154 +1781,151 @@ function ResizeHandles:_beginDrag(axis, highlight)
 		upConn:Disconnect()
 		self._dragging = false
 		highlight(false)
-		self:_setOtherAxesVisible(axis.name, true)
-		self.Ended:Fire(axis.name)
+		self:SetAdornmentsVisible({axis.name}, true)
+		Data.InputEnded:Fire(axis.name)
 	end)
 
 	table_insert(self._dragConns, moveConn)
 	table_insert(self._dragConns, upConn)
 end
 
-function ResizeHandles:SetAdornees(adornees)
-	self.Adornees = normalizeAdornees(adornees)
-	self.PrimaryIndex = #self.Adornees
-	local primary = self:_primaryAdornee()
-	self.isValid = primary ~= nil and primary:IsA("BasePart")
-	self:_setOtherAxesVisible("", true)
-	self:_syncHolder()
+ResizeInstance.OnChanged = function(self, name, value)
+	local data = rawget(self, "_data")
+
+	if name == "Adornee" then
+		self._adornees = normalizeAdornees(value)
+		self._primaryIndex = #self._adornees
+		local primary = self:_primaryAdornee()
+		self.isValid = primary ~= nil and primary:IsA("BasePart")
+	end
+
+	if name == "Adornee" or name == "Visible" then
+		local visible = data.Visible and self.isValid
+		self:SetAdornmentsVisible({}, visible)
+		if visible then
+			self:SyncHolder()
+		end
+	end
 end
 
-function ResizeHandles:SetAdornee(part)
-	self:SetAdornees(part and {part} or {})
-end
-
-function ResizeHandles:SetVisible(bool)
-	self._visible = bool
-	self:_setOtherAxesVisible("", bool)
-end
-
-function ResizeHandles:Destroy()
+ResizeInstance.Destroy = function(self)
 	for _, c in next, self._conns do c:Disconnect() end
 	for _, c in next, self._dragConns do c:Disconnect() end
 	if self._heartbeatConn then self._heartbeatConn:Disconnect() end
-	for _, i in next, self._watchers do i:Destroy() end
+	for _, w in next, self._watchers do w:Destroy() end
 
 	self._holder:Destroy()
 
 	table_clear(self._conns)
 	table_clear(self._dragConns)
-	table_clear(self._cubes)
+	table_clear(self._adornments)
 	table_clear(self._watchers)
 
-	self.Began:Destroy()
 	self.Changed:Destroy()
-	self.Ended:Destroy()
-	self.MouseEnter:Destroy()
-	self.MouseLeave:Destroy()
+
+	local Data = rawget(self, "_data")
+	Data.InputBegan:Destroy()
+	Data.InputChanged:Destroy()
+	Data.InputEnded:Destroy()
+	Data.MouseEnter:Destroy()
+	Data.MouseLeave:Destroy()
 
 	table_clear(self)
 	setmetatable(self, nil)
+end
+
+function Resize.new()
+	local self = setmetatable({}, ResizeInstance)
+	self.Changed = CreateSignal()
+
+	self._data = {
+		ClassName = "Resize",
+		Adornee = nil,
+		Visible = true,
+		InputBegan = CreateSignal(),
+		InputChanged = CreateSignal(),
+		InputEnded = CreateSignal(),
+		MouseEnter = CreateSignal(),
+		MouseLeave = CreateSignal()
+	}
+	self._adornees = {}
+	self._primaryIndex = 0
+	self._holder = newHolder("ResizeHandles", GizmoFolder)
+	self._adornments = {}
+	self._conns = {}
+	self._dragConns = {}
+	self._watchers = {}
+	self._dragging = false
+	self.isValid = false
+
+	for _, axis in next, ResizeAxes do
+		self:Build(axis)
+	end
+	self:SetAdornmentsVisible({}, false)
+
+	self:SyncHolder()
+	self._heartbeatConn = Heartbeat:Connect(function()
+		self:SyncHolder()
+	end)
+
+	self.Changed:Connect(function(...)
+		self:OnChanged(...)
+	end)
+
+	return self
 end
 
 ------------------------------------------------------------------------------------------------------------------------
 -- Arcball
 ------------------------------------------------------------------------------------------------------------------------
 local Arcball = {}
-Arcball.__index = Arcball
+local ArcballInstance = {}
 
-local GetArcballVector = function(mousePos, viewportSize)
-	local x = (mousePos.X / viewportSize.X) * 2 - 1
-	local y = 1 - (mousePos.Y / viewportSize.Y) * 2
-
-	local length2 = x*x + y*y
-
-	if length2 <= 1 then
-		return vector_create(x, y, sqrt(1 - length2))
-	else
-		local length = sqrt(length2)
-		return vector_create(x / length, y / length, 0)
+ArcballInstance.__index = function(self, a)
+	local method = ArcballInstance[a]
+	if method ~= nil then
+		return method
 	end
+	return rawget(self, "_data")[a]
 end
-
-local RotationBetween = function(v1, v2)
-	local axis = vector_cross(v1, v2)
-	local axisMag = vector_magnitude(axis)
-
-	local dot = clamp(vector_dot(v1, v2), -1, 1)
-
-	if axisMag < 1e-6 then
-		if dot < -0.999 then
-			local fallbackAxis = vector_cross(v1, vector_create(0, 1, 0))
-			if vector_magnitude(fallbackAxis) < 1e-6 then
-				fallbackAxis = vector_cross(v1, vector_create(1, 0, 0))
-			end
-			return CFrame_fromAxisAngle(vector_normalize(fallbackAxis), 3.141592653589793)
+ArcballInstance.__newindex = function(self, a, b)
+	local data = rawget(self, "_data")
+	if data then
+		local old = data[a]
+		if old ~= b then
+			data[a] = b
+			rawget(self, "Changed"):Fire(a, b)
 		end
-		return CFrame_identity
+	else
+		rawset(self, a, b)
 	end
-
-	local angle = acos(dot)
-	return CFrame_fromAxisAngle(vector_normalize(axis), angle)
 end
 
-function Arcball.new(adornees)
-	local self = setmetatable({}, Arcball)
-	self.Adornees = normalizeAdornees(adornees)
-	self.Classes = computeClasses(self.Adornees)
-	self.PrimaryIndex = #self.Adornees
-	self._activeCFrames = {}
-	self._activeCount = 0
-	self._visible = true
-	self._holder = newHolder("Arcball", GizmoFolder)
-	self._conns = {}
-	self._dragConns = {}
-	self._arcs = {}
-	self._lastTouchCount = 0
-	self._dragging = false
-
-	self.Began = CreateSignal()
-	self.Changed = CreateSignal()
-	self.Ended = CreateSignal()
-	self.MouseEnter = CreateSignal()
-	self.MouseLeave = CreateSignal()
-
-	self:_buildAdornment()
-
-	local originsphere = Instance_new("SphereHandleAdornment")
-	originsphere.Name = "origin"
-	originsphere.Adornee = self._holder
-	originsphere.AlwaysOnTop = true
-	originsphere.Color3 = Color3_fromRGB(240, 160, 25)
-	originsphere.ZIndex = 0
-	originsphere.Radius = 0.1
-	originsphere.Transparency = 0.4
-	originsphere.Parent = self._holder
-
-	self._originsphere = originsphere
-
-	self:_syncHolder()
-	self._heartbeatConn = Heartbeat:Connect(function()
-		self:_syncHolder()
-	end)
-
-	return self
-end
-
-function Arcball:_syncHolder()
-	if self._visible then
-		local pivotCF, cframes, count = getPivotCFrame(self.Adornees, self.Classes, self.PrimaryIndex, true)
+ArcballInstance.SyncHolder = function(self)
+	if rawget(self, "_data").Visible then
+		local pivotCF, cframes, count = getPivotCFrame(self._adornees, self._classes, self._primaryIndex, true)
 		self._activeCFrames = cframes
 		self._activeCount = count
 		if pivotCF then
 			self._holder.CFrame = pivotCF
-			self:_update()
+			self:Update()
 		end
 	end
 end
 
-function Arcball:_buildAdornment()
+ArcballInstance.Build = function(self)
 	local outlinepart = newHolder("outlinepart", self._holder)
-
+	
+	local origin = Instance_new("SphereHandleAdornment")
+	origin.Name = "origin"
+	origin.Adornee = self._holder
+	origin.AlwaysOnTop = true
+	origin.Color3 = Color3_fromRGB(240, 160, 25)
+	origin.ZIndex = 0
+	origin.Radius = 0.1
+	origin.Transparency = 0.4
+	origin.Parent = self._holder
+	
 	local outlinering = Instance_new("CylinderHandleAdornment")
 	outlinering.Name = "outline"
 	outlinering.Adornee = outlinepart
@@ -1827,13 +1970,14 @@ function Arcball:_buildAdornment()
 		ring.Transparency = 0.5
 		ring.Parent = self._holder
 
-		self._arcs[data.name] = ring
+		self._adornments[data.name] = ring
 	end
 
-	self._arcs.outline = outlinering
-	self._arcs.sphere = sphere
-	self._arcs.inputsphere = inputsphere
-	self._arcs.outlinepart = outlinepart
+	self._adornments.outline = outlinering
+	self._adornments.sphere = sphere
+	self._adornments.inputsphere = inputsphere
+	self._adornments.outlinepart = outlinepart
+	self._adornments.origin = origin
 
 	local watcherdata = {
 		Draggable = true,
@@ -1843,48 +1987,50 @@ function Arcball:_buildAdornment()
 
 	self._watcherdata = watcherdata
 	self._watcher = watcher
-
-	local highlight = function(on)
-
-	end
+	
+	local Data = rawget(self, "_data")
 
 	table_insert(self._conns, watcher.MouseEnter:Connect(function()
-		if self._visible then
-			highlight(true)
-			self.MouseEnter:Fire()
+		if Data.Visible then
+			Data.MouseEnter:Fire()
 		end
 	end))
 	table_insert(self._conns, watcher.MouseLeave:Connect(function()
-		highlight(false)
-		if self._visible then
-			self.MouseLeave:Fire()
+		if Data.Visible then
+			Data.MouseLeave:Fire()
 		end
 	end))
 	table_insert(self._conns, watcher.MouseButton1Down:Connect(function(input)
-		if self._visible then
-			highlight(true)
+		if Data.Visible then
 			local type = input.UserInputType
-			if (type == MouseButton1 or type == Touch) and self._visible then
-				self:_beginDrag(highlight)
+			if (type == MouseButton1 or type == Touch) then
+				self:OnDragBegan()
 			end
 		end
 	end))
 	table_insert(self._conns, watcher.MouseButton1Up:Connect(function()
-		highlight(false)
 		if self._dragging then
-			self.Ended:Fire()
+			Data.InputEnded:Fire()
 		end
 	end))
 end
 
-function Arcball:_update()
-	if #self.Adornees == 0 then return end
+ArcballInstance.SetAdornmentsVisible = function(self, exceptions, bool)
+	exceptions = exceptions or {}
+	for name, obj in next, self._adornments do
+		if name ~= "outlinepart" and (not table_find(exceptions, name)) then
+			obj.Visible = bool
+		end
+	end
+end
 
-	local radius = getGroupRadius(self.Adornees)
+ArcballInstance.Update = function(self)
+	if #self._adornees == 0 then return end
+
+	local radius = getGroupRadius(self._adornees)
 	local thickness = radius * 0.045
-	local handleRadius = radius * 0.08
 
-	for name, obj in next, self._arcs do
+	for name, obj in next, self._adornments do
 		if name == "X" or name == "Y" or name == "Z" then
 			obj.Radius = radius
 			obj.InnerRadius = radius - thickness
@@ -1893,21 +2039,22 @@ function Arcball:_update()
 	end
 
 	self._watcherdata.Padding = radius
-	self._arcs.inputsphere.Radius = radius
-	self._arcs.sphere.Radius = radius / 1.25
-	self._arcs.outline.Radius = radius
-	self._arcs.outline.InnerRadius = radius - thickness
-	self._arcs.outline.Height = thickness
+	self._adornments.inputsphere.Radius = radius
+	self._adornments.sphere.Radius = radius / 1.25
+	self._adornments.outline.Radius = radius
+	self._adornments.outline.InnerRadius = radius - thickness
+	self._adornments.outline.Height = thickness
 
 	if Camera then
 		local cframe = self._holder.CFrame
-		local look = Camera.CFrame.LookVector
+		local camcframe = Camera.CFrame
+		local look = camcframe.LookVector
 
-		self._arcs.outlinepart.CFrame = CFrame_lookAt(cframe.Position, cframe.Position + look, Camera.CFrame.UpVector)
+		self._adornments.outlinepart.CFrame = CFrame_lookAt(cframe.Position, cframe.Position + look, camcframe.UpVector)
 	end
 end
 
-function Arcball:_beginDrag(highlight)
+ArcballInstance.OnDragBegan  = function(self)
 	if self._dragging then return end
 	self._dragging = true
 
@@ -1916,23 +2063,24 @@ function Arcball:_beginDrag(highlight)
 		self._dragging = false
 		return
 	end
+	
+	local Data = rawget(self, "_data")
 
 	local startLocalVector = GetArcballVector(UserInputService:GetMouseLocation(), Camera.ViewportSize)
 	local worldStart = Camera.CFrame:VectorToWorldSpace(startLocalVector)
 	local pivotPos = self._holder.CFrame.Position
 	local forceWorld = (self._activeCount or 0) > 1
 
-	self.Began:Fire()
-
+	Data.InputBegan:Fire()
+	
 	local watcher = self._watcher
-
 	local moveConn = watcher.DragChanged:Connect(function()
 		local currentLocalVector = GetArcballVector(UserInputService:GetMouseLocation(), Camera.ViewportSize)
 		local worldCurrent = Camera.CFrame:VectorToWorldSpace(currentLocalVector)
 		local rotation = RotationBetween(worldStart, worldCurrent)
 
-		for i, adornee in next, self.Adornees do
-			local class = self.Classes[i]
+		for i, adornee in next, self._adornees do
+			local class = self._classes[i]
 			local startCF = startCFrames[i]
 			if adornee and class and startCF then
 				local newCF
@@ -1946,8 +2094,8 @@ function Arcball:_beginDrag(highlight)
 			end
 		end
 
-		self:_syncHolder()
-		self.Changed:Fire()
+		self:SyncHolder()
+		Data.InputChanged:Fire()
 	end)
 
 	local upConn
@@ -1955,36 +2103,42 @@ function Arcball:_beginDrag(highlight)
 		moveConn:Disconnect()
 		upConn:Disconnect()
 		self._dragging = false
-		highlight(false)
-		self.Ended:Fire()
+		Data.InputEnded:Fire()
 	end)
 
 	table_insert(self._dragConns, moveConn)
 	table_insert(self._dragConns, upConn)
 end
 
-function Arcball:SetAdornees(adornees)
-	self.Adornees = normalizeAdornees(adornees)
-	self.Classes = computeClasses(self.Adornees)
-	self.PrimaryIndex = #self.Adornees
-	self:_syncHolder()
-end
-
-function Arcball:SetAdornee(adornee)
-	self:SetAdornees(adornee and {adornee} or {})
-end
-
-function Arcball:SetVisible(bool)
-	self._visible = bool
-	for name, obj in next, self._arcs do
-		if name ~= "outlinepart" then
-			obj.Visible = bool
+ArcballInstance.OnChanged = function(self, name, value)
+	if name == "Adornee" then
+		if rawget(self, "_data").Visible then
+			if type(value) == "table" then
+				if next(value) then
+					self:SetAdornmentsVisible({}, true)
+				else
+					self:SetAdornmentsVisible({}, false)
+				end
+			elseif typeof(value) == "Instance" then
+				self:SetAdornmentsVisible({}, true)
+			else
+				self:SetAdornmentsVisible({}, false)
+			end
 		end
+		self._adornees = normalizeAdornees(value)
+		self._classes = computeClasses(self._adornees)
+		self._primaryIndex = #self._adornees
+		self:SyncHolder()
+	elseif name == "AxisType" then
+		self._isWorldSpace = (value == "World")
+		self:SyncHolder()
+	elseif name == "Visible" then
+		self:SetAdornmentsVisible({}, value)
+		self:SyncHolder()
 	end
-	self._originsphere.Visible = bool
 end
 
-function Arcball:Destroy()
+ArcballInstance.Destroy = function(self)
 	for _, c in next, self._conns do c:Disconnect() end
 	for _, c in next, self._dragConns do c:Disconnect() end
 	if self._heartbeatConn then self._heartbeatConn:Disconnect() end
@@ -1994,16 +2148,68 @@ function Arcball:Destroy()
 
 	table_clear(self._conns)
 	table_clear(self._dragConns)
-	table_clear(self._arcs)
-
-	self.Began:Destroy()
+	table_clear(self._adornments)
+	
 	self.Changed:Destroy()
-	self.Ended:Destroy()
-	self.MouseEnter:Destroy()
-	self.MouseLeave:Destroy()
+	
+	local Data = rawget(self, "_data")
+	Data.InputBegan:Destroy()
+	Data.InputChanged:Destroy()
+	Data.InputEnded:Destroy()
+	Data.MouseEnter:Destroy()
+	Data.MouseLeave:Destroy()
 
 	table_clear(self)
 	setmetatable(self, nil)
 end
 
-return {MoveHandles = MoveHandles, RotateHandles = RotateHandles, ResizeHandles = ResizeHandles, Arcball = Arcball}
+function Arcball.new()
+	local self = setmetatable({}, ArcballInstance)
+	self.Changed = CreateSignal()
+	
+	self._data = {
+		ClassName = "Arcball",
+		Adornee = nil,
+		Visible = true,
+		AxisType = "Object",
+		InputBegan = CreateSignal(),
+		InputChanged = CreateSignal(),
+		InputEnded = CreateSignal(),
+		MouseEnter = CreateSignal(),
+		MouseLeave = CreateSignal()
+	}
+	self._adornees = {}
+	self._classes = {}
+	self._primaryIndex = 0
+	self._activeCFrames = {}
+	self._activeCount = 0
+	self._holder = newHolder("Arcball", GizmoFolder)
+	self._conns = {}
+	self._dragConns = {}
+	self._adornments = {}
+	self._lastTouchCount = 0
+	self._isWorldSpace = false
+	self._watchers = {}
+	self._dragging = false
+
+	self:Build()
+	self:SetAdornmentsVisible({}, false)
+	
+	self:SyncHolder()
+	self._heartbeatConn = Heartbeat:Connect(function()
+		self:SyncHolder()
+	end)
+	
+	self.Changed:Connect(function(...)
+		self:OnChanged(...)
+	end)
+
+	return self
+end
+
+return {
+	Move = Move,
+	Rotate = Rotate,
+	Resize = Resize,
+	Arcball = Arcball
+}
