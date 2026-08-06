@@ -1,12 +1,12 @@
 --!optimize 2
 --!native
 
-local buffer_fromstring = buffer.fromstring
-local buffer_tostring = buffer.tostring
-local min = math.min
+const buffer_fromstring = buffer.fromstring
+const buffer_tostring = buffer.tostring
+const min = math.min
 
-local EncodingService = game:GetService("EncodingService")
-local Algorithm = Enum.CompressionAlgorithm.Zstd
+const EncodingService = game:GetService("EncodingService")
+const Algorithm = Enum.CompressionAlgorithm.Zstd
 
 local Module = {}
 Module.Compress = function(data: string?, level: number?, returnstring: boolean?)

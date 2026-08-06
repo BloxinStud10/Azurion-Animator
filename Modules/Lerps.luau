@@ -1,16 +1,24 @@
+--!optimize 2
 --tis a fork of BoatTween :p
 
-local env = (getfenv and getfenv()) or _G
-local cenv = env.Azurion or {}
-local settings = cenv.settings
+const global = shared or _G
+local ccontainer = rawget(global, "Azurion")
+if not ccontainer then
+	repeat
+		ccontainer = rawget(global, "Azurion")
+		wait()
+	until ccontainer
+end
+local configurations = ccontainer.configurations
+local settings = configurations.settings
 
-local BLACK_COLOR3 = Color3.new()
-local CFRAME_ZERO = CFrame.identity
+const BLACK_COLOR3 = Color3.new()
+const CFRAME_ZERO = CFrame.identity
 
-local C3Lerp = BLACK_COLOR3.Lerp
-local CLerp = CFRAME_ZERO.Lerp
+const C3Lerp = BLACK_COLOR3.Lerp
+const CLerp = CFRAME_ZERO.Lerp
 
-local function Color3Lerp(C0, C1, Alpha)
+const Color3Lerp = @native function(C0, C1, Alpha)
 	if settings.BetterColor3Lerp then
 		local L0, U0, V0
 		local R0, G0, B0 = C0.R, C0.G, C0.B
@@ -94,7 +102,7 @@ return {
 		end
 	end,
 	number = math.lerp,
-	string = function(A, B, Alpha)
+	string = @native function(A, B, Alpha)
 		Alpha = math.clamp(Alpha, 0, 1)
 		
 		local len = math.max(#A, #B)
@@ -114,13 +122,13 @@ return {
 	end,
 	CFrame = CLerp,
 	Color3 = Color3Lerp,
-	NumberRange = function(V0, V1, Alpha)
+	NumberRange = @native function(V0, V1, Alpha)
 		local Min0, Max0 = V0.Min, V0.Max
 		local DeltaMin, DeltaMax = V1.Min - Min0, V1.Max - Max0
 
 		return NumberRange.new(Min0 + Alpha * DeltaMin, Max0 + Alpha * DeltaMax)
 	end,
-	PhysicalProperties = function(V0, V1, Alpha)
+	PhysicalProperties = @native function(V0, V1, Alpha)
 		local D0, E0, EW0, F0, FW0 = V0.Density, V0.Elasticity, V0.ElasticityWeight, V0.Friction, V0.FrictionWeight
 
 		local DD, DE, DEW, DF, DFW = V1.Density - D0, V1.Elasticity - E0, V1.ElasticityWeight - EW0, V1.Friction - F0, V1.FrictionWeight - FW0
@@ -131,7 +139,7 @@ return {
 			F0 + Alpha * DF, FW0 + Alpha * DFW
 		)
 	end,
-	UDim = function(V0, V1, Alpha)
+	UDim = @native function(V0, V1, Alpha)
 		local SC, OF = V0.Scale, V0.Offset
 		local DSC, DOF = V1.Scale - SC, V1.Offset - OF
 
@@ -140,7 +148,7 @@ return {
 	UDim2 = UDim2.new().Lerp,
 	Vector2 = Vector2.new().Lerp,
 	Vector3 = vector.lerp,
-	NumberSequence = function(V0, V1, Alpha)
+	NumberSequence = @native function(V0, V1, Alpha)
 		local keypoints = {}
 		local addedTimes = {}
 		local keylength = 0
@@ -205,7 +213,7 @@ return {
 		table.sort(keypoints, SortByTime)
 		return NumberSequence.new(keypoints)
 	end,
-	ColorSequence = function(V0, V1, Alpha)
+	ColorSequence = @native function(V0, V1, Alpha)
 		local keypoints = {}
 		local addedTimes = {}
 		local keylength = 0

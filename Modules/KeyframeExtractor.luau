@@ -1,33 +1,34 @@
+--!optimize 2
 --// extremely fast animation data extractor //
 
-local next = next
-local assert = assert
-local Enum = Enum
-local table_insert = table.insert
-local table_clear = table.clear
-local table_unpack = table.unpack
-local table_sort = table.sort
+const next = next
+const assert = assert
+const Enum = Enum
+const table_insert = table.insert
+const table_clear = table.clear
+const table_unpack = table.unpack
+const table_sort = table.sort
 
-local PoseEasingStyle = Enum.PoseEasingStyle
-local PoseEasingDirection = Enum.PoseEasingDirection
-local PoseEasingStyleLinear = PoseEasingStyle.Linear
-local PoseEasingDirectionIn = PoseEasingDirection.In
+const PoseEasingStyle = Enum.PoseEasingStyle
+const PoseEasingDirection = Enum.PoseEasingDirection
+const PoseEasingStyleLinear = PoseEasingStyle.Linear
+const PoseEasingDirectionIn = PoseEasingDirection.In
 
 local AnimationDatas = {}
 
-local GetValueFromCurve = function(Curve, Time)
+const GetValueFromCurve = function(Curve, Time)
 	if not Curve then
 		return nil
 	end
 	if Curve:IsA("Vector3Curve") then
-		local X, Y, Z = table_unpack(Curve:GetValueAtTime(Time))
+		const X, Y, Z = table_unpack(Curve:GetValueAtTime(Time))
 		return vector.create(X or 0, Y or 0, Z or 0)
 	elseif Curve:IsA("EulerRotationCurve") then
 		return Curve:GetRotationAtTime(Time)
 	end
 end
 
-local GetAncestorKeyframe = function(Instance)
+const GetAncestorKeyframe = function(Instance)
 	local Current = Instance.Parent
 	while Current and not Current:IsA("Keyframe") do
 		Current = Current.Parent

@@ -1,8 +1,10 @@
-local function Linear(T)
+--!optimize 2
+
+const Linear = function(T)
 	return T
 end
 
-local function Bezier(X1, Y1, X2, Y2)
+const Bezier = function(X1, Y1, X2, Y2)
 	if not (X1 and Y1 and X2 and Y2) then
 		error("Need 4 numbers to construct a Bezier curve", 0)
 	end
@@ -21,7 +23,7 @@ local function Bezier(X1, Y1, X2, Y2)
 		SampleValues[Index] = (((1 - 3 * X2 + 3 * X2) * IndexDiv10 + (3 * X2 - 6 * X1)) * IndexDiv10 + (3 * X1)) * IndexDiv10
 	end
 
-	return function(T)
+	return @native function(T)
 		if T == 0 or T == 1 then
 			return T
 		end
@@ -74,71 +76,67 @@ local function Bezier(X1, Y1, X2, Y2)
 	end
 end
 
-local PI = 3.141592653589793
-local HALF_PI = PI/2
+const PI = 3.141592653589793
+const HALF_PI = PI/2
 
-local function RevBack(T)
+const RevBack = @native function(T)
 	T = 1 - T
 	return 1 - (math.sin(T*HALF_PI) + (math.sin(T*PI)*(math.cos(T*PI) + 1)/2))
 end
 
-local function Linear(T)
-	return T
-end
-
 -- @specs https://material.io/guidelines/motion/duration-easing.html#duration-easing-natural-easing-curves
-local Sharp = Bezier(0.4, 0, 0.6, 1)
-local Standard = Bezier(0.4, 0, 0.2, 1) -- used for moving.
-local Acceleration = Bezier(0.4, 0, 1, 1) -- used for exiting.
-local Deceleration = Bezier(0, 0, 0.2, 1) -- used for entering.
+const Sharp = Bezier(0.4, 0, 0.6, 1)
+const Standard = Bezier(0.4, 0, 0.2, 1) -- used for moving.
+const Acceleration = Bezier(0.4, 0, 1, 1) -- used for exiting.
+const Deceleration = Bezier(0, 0, 0.2, 1) -- used for entering.
 
 -- @specs https://developer.microsoft.com/en-us/fabric#/styles/web/motion#basic-animations
-local FabricStandard = Bezier(0.8, 0, 0.2, 1) -- used for moving.
-local FabricAccelerate = Bezier(0.9, 0.1, 1, 0.2) -- used for exiting.
-local FabricDecelerate = Bezier(0.1, 0.9, 0.2, 1) -- used for entering.
+const FabricStandard = Bezier(0.8, 0, 0.2, 1) -- used for moving.
+const FabricAccelerate = Bezier(0.9, 0.1, 1, 0.2) -- used for exiting.
+const FabricDecelerate = Bezier(0.1, 0.9, 0.2, 1) -- used for entering.
 
 -- @specs https://docs.microsoft.com/en-us/windows/uwp/design/motion/timing-and-easing
-local UWPAccelerate = Bezier(0.7, 0, 1, 0.5)
+const UWPAccelerate = Bezier(0.7, 0, 1, 0.5)
 
 -- @specs https://www.ibm.com/design/language/elements/motion/basics
 
 -- Productivity and Expression are both essential to an interface. Reserve Expressive motion for occasional, important moments to better capture user’s attention, and offer rhythmic break to the productive experience.
 -- Use standard-easing when an element is visible from the beginning to end of a motion. Tiles expanding and table rows sorting are good examples.
-local StandardProductive = Bezier(0.2, 0, 0.38, 0.9)
-local StandardExpressive = Bezier(0.4, 0.14, 0.3, 1)
+const StandardProductive = Bezier(0.2, 0, 0.38, 0.9)
+const StandardExpressive = Bezier(0.4, 0.14, 0.3, 1)
 
 -- Use entrance-easing when adding elements to the view such as a modal or toaster appearing, or moving in response to users’ input, such as dropdown opening or toggle. An element quickly appears and slows down to a stop.
-local EntranceProductive = Bezier(0, 0, 0.38, 0.9)
-local EntranceExpressive = Bezier(0, 0, 0.3, 1)
+const EntranceProductive = Bezier(0, 0, 0.38, 0.9)
+const EntranceExpressive = Bezier(0, 0, 0.3, 1)
 
 -- Use exit-easing when removing elements from view, such as closing a modal or toaster. The element speeds up as it exits from view, implying that its departure from the screen is permanent.
-local ExitProductive = Bezier(0.2, 0, 1, 0.9)
-local ExitExpressive = Bezier(0.4, 0.14, 1, 1)
+const ExitProductive = Bezier(0.2, 0, 1, 0.9)
+const ExitExpressive = Bezier(0.4, 0.14, 1, 1)
 
 -- @specs https://design.firefox.com/photon/motion/duration-and-easing.html
-local MozillaCurve = Bezier(0.07, 0.95, 0, 1)
+const MozillaCurve = Bezier(0.07, 0.95, 0, 1)
 
-local function Smooth(T)
+const Smooth = @native function(T)
 	return T*T*(3 - 2*T)
 end
 
-local function Smoother(T)
+const Smoother = @native function(T)
 	return T*T*T*(T*(6*T - 15) + 10)
 end
 
-local function RidiculousWiggle(T)
+const RidiculousWiggle = @native function(T)
 	return math.sin(math.sin(T*PI)*HALF_PI)
 end
 
-local function Spring(T)
+const Spring = @native function(T)
 	return 1 + (-math.exp(-6.9*T)*math.cos(-20.106192982975*T))
 end
 
-local function SoftSpring(T)
+const SoftSpring = @native function(T)
 	return 1 + (-math.exp(-7.5*T)*math.cos(-10.053096491487*T))
 end
 
-local function OutBounce(T)
+const OutBounce = @native function(T)
 	if T < 0.36363636363636 then
 		return 7.5625*T*T
 	elseif T < 0.72727272727273 then
@@ -150,7 +148,7 @@ local function OutBounce(T)
 	end
 end
 
-local function InBounce(T)
+const InBounce = @native function(T)
 	if T > 0.63636363636364 then
 		T -= 1
 		return 1 - T*T*7.5625
@@ -163,7 +161,7 @@ local function InBounce(T)
 	end
 end
 
-local EasingFunctions = setmetatable({
+const EasingFunctions = setmetatable({
 	InLinear = Linear;
 	OutLinear = Linear;
 	InOutLinear = Linear;
@@ -296,15 +294,15 @@ local EasingFunctions = setmetatable({
 		return T<0.5 and 1 or 0
 	end;
 
-	InQuad = function(T)
+	InQuad = @native function(T)
 		return T*T
 	end;
 
-	OutQuad = function(T)
+	OutQuad = @native function(T)
 		return T*(2 - T)
 	end;
 
-	InOutQuad = function(T)
+	InOutQuad = @native function(T)
 		if T < 0.5 then
 			return 2*T*T
 		else
@@ -312,7 +310,7 @@ local EasingFunctions = setmetatable({
 		end
 	end;
 
-	OutInQuad = function(T)
+	OutInQuad = @native function(T)
 		if T < 0.5 then
 			T *= 2
 			return T*(2 - T)/2
@@ -322,16 +320,16 @@ local EasingFunctions = setmetatable({
 		end
 	end;
 
-	InCubic = function(T)
+	InCubic = @native function(T)
 		return T*T*T
 	end;
 
-	OutCubic = function(T)
+	OutCubic = @native function(T)
 		T -= 1
 		return 1 - T*T*T
 	end;
 
-	InOutCubic = function(T)
+	InOutCubic = @native function(T)
 		if T < 0.5 then
 			return 4*T*T*T
 		else
@@ -340,7 +338,7 @@ local EasingFunctions = setmetatable({
 		end
 	end;
 
-	OutInCubic = function(T)
+	OutInCubic = @native function(T)
 		if T < 0.5 then
 			T = 1 - T*2
 			return (1 - T*T*T) / 2
@@ -350,16 +348,16 @@ local EasingFunctions = setmetatable({
 		end
 	end;
 
-	InQuart = function(T)
+	InQuart = @native function(T)
 		return T*T*T*T
 	end;
 
-	OutQuart = function(T)
+	OutQuart = @native function(T)
 		T -= 1
 		return 1 - T*T*T*T
 	end;
 
-	InOutQuart = function(T)
+	InOutQuart = @native function(T)
 		if T < 0.5 then
 			T *= T
 			return 8*T*T
@@ -369,7 +367,7 @@ local EasingFunctions = setmetatable({
 		end
 	end;
 
-	OutInQuart = function(T)
+	OutInQuart = @native function(T)
 		if T < 0.5 then
 			T = T*2 - 1
 			return (1 - T*T*T*T)/2
@@ -379,16 +377,16 @@ local EasingFunctions = setmetatable({
 		end
 	end;
 
-	InQuint = function(T)
+	InQuint = @native function(T)
 		return T*T*T*T*T
 	end;
 
-	OutQuint = function(T)
+	OutQuint = @native function(T)
 		T -= 1
 		return T*T*T*T*T + 1
 	end;
 
-	InOutQuint = function(T)
+	InOutQuint = @native function(T)
 		if T < 0.5 then
 			return 16*T*T*T*T*T
 		else
@@ -397,7 +395,7 @@ local EasingFunctions = setmetatable({
 		end
 	end;
 
-	OutInQuint = function(T)
+	OutInQuint = @native function(T)
 		if T < 0.5 then
 			T = T*2 - 1
 			return (T*T*T*T*T + 1)/2
@@ -407,16 +405,16 @@ local EasingFunctions = setmetatable({
 		end
 	end;
 
-	InBack = function(T)
+	InBack = @native function(T)
 		return T*T*(3*T - 2)
 	end;
 
-	OutBack = function(T)
+	OutBack = @native function(T)
 		local TSubOne = T - 1
 		return TSubOne*TSubOne*(T*2 + TSubOne) + 1
 	end;
 
-	InOutBack = function(T)
+	InOutBack = @native function(T)
 		if T < 0.5 then
 			return 2*T*T*(2*3*T - 2)
 		else
@@ -424,7 +422,7 @@ local EasingFunctions = setmetatable({
 		end
 	end;
 
-	OutInBack = function(T)
+	OutInBack = @native function(T)
 		if T < 0.5 then
 			T *= 2
 			local TSubOne = T - 1
@@ -435,19 +433,19 @@ local EasingFunctions = setmetatable({
 		end
 	end;
 
-	InSine = function(T)
+	InSine = @native function(T)
 		return 1 - math.cos(T*HALF_PI)
 	end;
 
-	OutSine = function(T)
+	OutSine = @native function(T)
 		return math.sin(T*HALF_PI)
 	end;
 
-	InOutSine = function(T)
+	InOutSine = @native function(T)
 		return (1 - math.cos(PI*T))/2
 	end;
 
-	OutInSine = function(T)
+	OutInSine = @native function(T)
 		if T < 0.5 then
 			return math.sin(T*PI)/2
 		else
@@ -458,7 +456,7 @@ local EasingFunctions = setmetatable({
 	OutBounce = OutBounce;
 	InBounce = InBounce;
 
-	InOutBounce = function(T)
+	InOutBounce = @native function(T)
 		if T < 0.5 then
 			return InBounce(2*T)/2
 		else
@@ -466,7 +464,7 @@ local EasingFunctions = setmetatable({
 		end
 	end;
 
-	OutInBounce = function(T)
+	OutInBounce = @native function(T)
 		if T < 0.5 then
 			return OutBounce(2*T)/2
 		else
@@ -474,15 +472,15 @@ local EasingFunctions = setmetatable({
 		end
 	end;
 
-	InElastic = function(T)
+	InElastic = @native function(T)
 		return math.exp((T*0.96380736418812 - 1)*8)*T*0.96380736418812*math.sin(4*T*0.96380736418812)*1.8752275007429
 	end;
 
-	OutElastic = function(T)
+	OutElastic = @native function(T)
 		return 1 + (math.exp(8*(0.96380736418812 - 0.96380736418812*T - 1))*0.96380736418812*(T - 1)*math.sin(4*0.96380736418812*(1 - T)))*1.8752275007429
 	end;
 
-	InOutElastic = function(T)
+	InOutElastic = @native function(T)
 		if T < 0.5 then
 			return (math.exp(8*(2*0.96380736418812*T - 1))*0.96380736418812*T*math.sin(7.71045891350496*T))*1.8752275007429
 		else
@@ -490,7 +488,7 @@ local EasingFunctions = setmetatable({
 		end
 	end;
 
-	OutInElastic = function(T)
+	OutInElastic = @native function(T)
 		-- This isn't actually correct, but it is close enough.
 		if T < 0.5 then
 			T *= 2
@@ -501,15 +499,15 @@ local EasingFunctions = setmetatable({
 		end
 	end;
 
-	InExpo = function(T)
+	InExpo = @native function(T)
 		return T*T*math.exp(4*(T - 1))
 	end;
 
-	OutExpo = function(T)
+	OutExpo = @native function(T)
 		return 1 - (1 - T)*(1 - T)/math.exp(4*T)
 	end;
 
-	InOutExpo = function(T)
+	InOutExpo = @native function(T)
 		if T < 0.5 then
 			return 2*T*T*math.exp(4*(2*T - 1))
 		else
@@ -517,7 +515,7 @@ local EasingFunctions = setmetatable({
 		end
 	end;
 
-	OutInExpo = function(T)
+	OutInExpo = @native function(T)
 		if T < 0.5 then
 			T *= 2
 			return (1 - (1 - T)*(1 - T)/math.exp(4*T))/2
@@ -527,16 +525,16 @@ local EasingFunctions = setmetatable({
 		end
 	end;
 
-	InCirc = function(T)
+	InCirc = @native function(T)
 		return -(math.sqrt(1 - T*T) - 1)
 	end;
 
-	OutCirc = function(T)
+	OutCirc = @native function(T)
 		T -= 1
 		return math.sqrt(1 - T*T)
 	end;
 
-	InOutCirc = function(T)
+	InOutCirc = @native function(T)
 		T *= 2
 		if T < 1 then
 			return -(math.sqrt(1 - T*T) - 1)/2
@@ -546,7 +544,7 @@ local EasingFunctions = setmetatable({
 		end
 	end;
 
-	OutInCirc = function(T)
+	OutInCirc = @native function(T)
 		if T < 0.5 then
 			T = T*2 - 1
 			return math.sqrt(1 - T*T)/2
@@ -561,7 +559,7 @@ local EasingFunctions = setmetatable({
 	end;
 })
 
-local TweenFunctions = {
+const TweenFunctions = {
 	FabricAccelerate = {
 		In = EasingFunctions.InFabricAccelerate;
 		Out = EasingFunctions.OutFabricAccelerate;
@@ -794,7 +792,7 @@ local TweenFunctions = {
 	};
 }
 
-local function Evaluate(Points, T)
+const Evaluate = @native function(Points, T)
 	if T <= Points[1][1] then
 		return Points[1][2]
 	end
@@ -811,7 +809,7 @@ local function Evaluate(Points, T)
 	return Points[#Points][2]
 end
 
-local function NewEasing(Name, Points)
+const NewEasing = function(Name, Points)
 	local EasingTable = TweenFunctions[Name]
 	if not EasingTable then
 		table.sort(Points, function(a, b)

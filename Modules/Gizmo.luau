@@ -3,7 +3,7 @@
 	OOP based Handles/ArcHandles Gizmo
 ]=]--
 
-local configurations = {
+const configurations = {
 	Move = {
 		shaftLength = 2.4,
 		tipLength = 0.9,
@@ -11,42 +11,42 @@ local configurations = {
 	}
 }
 
-local Instance_new = Instance.new
-local table_insert = table.insert
-local table_find = table.find
-local table_clear = table.clear
-local min = math.min
-local max = math.max
-local clamp = math.clamp
-local abs = math.abs
-local acos = math.acos
-local sqrt = math.sqrt
-local atan2 = math.atan2
+const Instance_new = Instance.new
+const table_insert = table.insert
+const table_find = table.find
+const table_clear = table.clear
+const min = math.min
+const max = math.max
+const clamp = math.clamp
+const abs = math.abs
+const acos = math.acos
+const sqrt = math.sqrt
+const atan2 = math.atan2
 
-local vector_magnitude = vector.magnitude
-local vector_cross = vector.cross
-local vector_normalize = vector.normalize
-local vector_dot = vector.dot
+const vector_magnitude = vector.magnitude
+const vector_cross = vector.cross
+const vector_normalize = vector.normalize
+const vector_dot = vector.dot
 
-local Color3_new = Color3.new
-local Color3_fromRGB = Color3.fromRGB
-local vector_create = vector.create
-local CFrame_new = CFrame.new
-local CFrame_Angles = CFrame.fromEulerAngles
-local CFrame_fromAxisAngle = CFrame.fromAxisAngle
-local CFrame_fromMatrix = CFrame.fromMatrix
-local CFrame_lookAt = CFrame.lookAt
+const Color3_new = Color3.new
+const Color3_fromRGB = Color3.fromRGB
+const vector_create = vector.create
+const CFrame_new = CFrame.new
+const CFrame_Angles = CFrame.fromEulerAngles
+const CFrame_fromAxisAngle = CFrame.fromAxisAngle
+const CFrame_fromMatrix = CFrame.fromMatrix
+const CFrame_lookAt = CFrame.lookAt
 
-local vector_zero = vector.zero
-local vector_one = vector.one
-local CFrame_identity = CFrame.identity
+const vector_zero = vector.zero
+const vector_one = vector.one
+const CFrame_identity = CFrame.identity
 
-local TIP_FLIP_CF = CFrame.new(0, 0, -0.45) * CFrame.fromEulerAngles(3.141592653589793, 0, 0)
+const TIP_FLIP_CF = CFrame.new(0, 0, -0.45) * CFrame.fromEulerAngles(3.141592653589793, 0, 0)
 
-local MouseButton1 = Enum.UserInputType.MouseButton1
-local Touch = Enum.UserInputType.Touch
+const MouseButton1 = Enum.UserInputType.MouseButton1
+const Touch = Enum.UserInputType.Touch
 
-local global = shared or _G
+const global = shared or _G
 local ccontainer = rawget(global, "Azurion")
 if not ccontainer then
 	repeat
@@ -59,19 +59,19 @@ local cleanTasks = ccontainer.cleanTasks
 local azFuncs = rawget(ccontainer, "functions")
 local waitForModule = rawget(azFuncs, "waitForModule")
 
-local CreateSignal = waitForModule("Signal")
+const CreateSignal = waitForModule("Signal")
 
-local container = rawget(ccontainer, "container")
+const container = rawget(ccontainer, "container")
 
-local Workspace = game:FindFirstChildOfClass("Workspace")
-local Players = game:FindFirstChildOfClass("Players")
-local UserInputService = game:FindFirstChildOfClass("UserInputService")
-local RunService = game:FindFirstChildOfClass("RunService")
+const Workspace = game:FindFirstChildOfClass("Workspace")
+const Players = game:FindFirstChildOfClass("Players")
+const UserInputService = game:FindFirstChildOfClass("UserInputService")
+const RunService = game:FindFirstChildOfClass("RunService")
 
 local Camera = Workspace.CurrentCamera
-local LocalPlayer = Players.LocalPlayer
+const LocalPlayer = Players.LocalPlayer
 
-local Heartbeat = RunService.Heartbeat
+const Heartbeat = RunService.Heartbeat
 local GizmoFolder = Instance_new("Folder", container)
 
 table_insert(cleanTasks, Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
@@ -81,13 +81,13 @@ end))
 ------------------------------------------------------------------------------------------------------------------------
 -- Important tuffs
 ------------------------------------------------------------------------------------------------------------------------
-local blacklistedClasses = {"Workspace", "Players", "ReplicatedStorage", "ReplicatedFirst", "SoundService", "Lighting", "Terrain", "Camera"}
+const blacklistedClasses = {"Workspace", "Players", "ReplicatedStorage", "ReplicatedFirst", "SoundService", "Lighting", "Terrain", "Camera"}
 
-local isBlacklistedInstance = function(instance)
+const isBlacklistedInstance = function(instance)
 	return table_find(blacklistedClasses, instance.ClassName)
 end
 
-local isAllowedClass = function(instance)
+const isAllowedClass = function(instance)
 	if not instance or isBlacklistedInstance(instance) then
 		return
 	end
@@ -113,7 +113,7 @@ local isAllowedClass = function(instance)
 	end
 end
 
-local returnValidSelections = function(selection)
+const returnValidSelections = function(selection)
 	local type = typeof(selection)
 	if type == "table" then
 		local newSelection = {}
@@ -129,23 +129,23 @@ local returnValidSelections = function(selection)
 	return {}
 end
 
-local getAdorneeCFrame = function(adornee, class)
+const getAdorneeCFrame = function(adornee, class)
 	if class == "BasePart" then
 		return adornee.CFrame
 	elseif class == "PVInstance" then
 		return adornee:GetPivot()
 	elseif class == "Motor6D" then
-		local part0, part1 = adornee.Part0, adornee.Part1
+		const part0, part1 = adornee.Part0, adornee.Part1
 		if part0 and part1 then
 			return part0.CFrame * adornee.C0 * adornee.Transform
 		end
 	elseif class == "Joint" then
-		local part0, part1 = adornee.Part0, adornee.Part1
+		const part0, part1 = adornee.Part0, adornee.Part1
 		if part0 and part1 then
 			return part0.CFrame * adornee.C0
 		end
 	elseif class == "AnimationConstraint" then
-		local att0, att1 = adornee.Attachment0, adornee.Attachment1
+		const att0, att1 = adornee.Attachment0, adornee.Attachment1
 		if att0 and att1 then
 			return att0.WorldCFrame * adornee.C0 * adornee.Transform
 		end
@@ -154,7 +154,7 @@ local getAdorneeCFrame = function(adornee, class)
 	end
 end
 
-local applyCFrame = function(adornee, class, newCF)
+const applyCFrame = function(adornee, class, newCF)
 	if class == "BasePart" then
 		adornee.CFrame = newCF
 	elseif class == "PVInstance" then
@@ -178,7 +178,7 @@ local applyCFrame = function(adornee, class, newCF)
 	end
 end
 
-local newHolder = function(name, parent)
+const newHolder = function(name, parent)
 	local holder = Instance_new("Part")
 	holder.Name = name
 	holder.Anchored = true
@@ -195,7 +195,7 @@ local newHolder = function(name, parent)
 	return holder
 end
 
-local getAxisOffset = function(adornee, axis)
+const getAxisOffset = function(adornee, axis)
 	local size
 	if adornee:IsA("BasePart") then
 		size = adornee.Size
@@ -212,7 +212,7 @@ local getAxisOffset = function(adornee, axis)
 	return abs(axis.X) * size.X * 0.5 + abs(axis.Y) * size.Y * 0.5 + abs(axis.Z) * size.Z * 0.5
 end
 
-local getRadius = function(adornee)
+const getRadius = function(adornee)
 	local size
 	if adornee:IsA("BasePart") then
 		size = adornee.Size
@@ -232,7 +232,7 @@ end
 ------------------------------------------------------------------------------------------------------------------------
 -- Multi-Adornee support
 ------------------------------------------------------------------------------------------------------------------------
-local normalizeAdornees = function(adornees)
+const normalizeAdornees = function(adornees)
 	local type = typeof(adornees)
 	if type == "table" then
 		local newAdornees = {}
@@ -248,7 +248,7 @@ local normalizeAdornees = function(adornees)
 	return {}
 end
 
-local computeClasses = function(adornees)
+const computeClasses = function(adornees)
 	local classes = {}
 	for i, adornee in next, adornees do
 		classes[i] = isAllowedClass(adornee)
@@ -256,13 +256,13 @@ local computeClasses = function(adornees)
 	return classes
 end
 
-local getPivotCFrame = function(adornees, classes, primaryIndex, worldSpace)
+const getPivotCFrame = function(adornees, classes, primaryIndex, worldSpace)
 	local count = 0
 	local sumPos = vector_zero
 	local cframes = {}
 
 	for i, adornee in next, adornees do
-		local class = classes[i]
+		const class = classes[i]
 		if adornee and class then
 			local cf = getAdorneeCFrame(adornee, class)
 			if cf then
@@ -277,8 +277,8 @@ local getPivotCFrame = function(adornees, classes, primaryIndex, worldSpace)
 		return nil, cframes, 0
 	end
 
-	local avgPos = sumPos / count
-	local refCFrame = cframes[primaryIndex]
+	const avgPos = sumPos / count
+	const refCFrame = cframes[primaryIndex]
 
 	if count > 1 or worldSpace or not refCFrame then
 		return CFrame_new(avgPos), cframes, count
@@ -287,7 +287,7 @@ local getPivotCFrame = function(adornees, classes, primaryIndex, worldSpace)
 	return CFrame_new(avgPos) * (refCFrame - refCFrame.Position), cframes, count
 end
 
-local getGroupAxisOffset = function(adornees, axisDir)
+const getGroupAxisOffset = function(adornees, axisDir)
 	local best = 0
 	for _, adornee in next, adornees do
 		if adornee then
@@ -297,7 +297,7 @@ local getGroupAxisOffset = function(adornees, axisDir)
 	return best
 end
 
-local getGroupRadius = function(adornees)
+const getGroupRadius = function(adornees)
 	local best = 0
 	for _, adornee in next, adornees do
 		if adornee then
@@ -307,14 +307,14 @@ local getGroupRadius = function(adornees)
 	return best
 end
 
-local computeAxisBasis = function(dir)
+const computeAxisBasis = function(dir)
 	local up = abs(dir.Y) < 0.99 and vector_create(0, 1, 0) or vector_create(1, 0, 0)
 	local right = vector_normalize(vector_cross(up, dir))
 	local realUp = vector_normalize(vector_cross(dir, right))
 	return right, realUp
 end
 
-local hasValidAdornee = function(adornees, classes)
+const hasValidAdornee = function(adornees, classes)
 	for i, adornee in next, adornees do
 		if adornee and classes[i] then
 			return true
@@ -323,16 +323,16 @@ local hasValidAdornee = function(adornees, classes)
 	return false
 end
 
-local axisCFrame = function(dir, offset)
+const axisCFrame = function(dir, offset)
 	local right, realUp = computeAxisBasis(dir)
 	return CFrame_fromMatrix(dir * offset, right, realUp, dir)
 end
 
-local axisCFrameFast = function(dir, right, up, offset)
+const axisCFrameFast = function(dir, right, up, offset)
 	return CFrame_fromMatrix(dir * offset, right, up, dir)
 end
 
-local Axes = {
+const Axes = {
 	{name = "+X", dir = vector_create(1, 0, 0), color = Color3_fromRGB(255, 70, 70)},
 	{name = "+Y", dir = vector_create(0, 1, 0), color = Color3_fromRGB(80, 255, 80)},
 	{name = "+Z", dir = vector_create(0, 0, 1), color = Color3_fromRGB(80, 140, 255)},
@@ -342,7 +342,7 @@ local Axes = {
 	{name = "-Z", dir = -vector_create(0, 0, 1), color = Color3_fromRGB(80, 140, 255)},
 }
 
-local RotateAxes = {
+const RotateAxes = {
 	{name = "+X", dir = vector_create(1, 0, 0), kdir = vector_create(0, 1, 0), color = Color3_fromRGB(255, 70, 70)},
 	{name = "+Y", dir = vector_create(0, 1, 0), kdir = vector_create(0, 0, 1), color = Color3_fromRGB(80, 255, 80)},
 	{name = "+Z", dir = vector_create(0, 0, 1), kdir = vector_create(1, 0, 0), color = Color3_fromRGB(80, 140, 255)},
@@ -352,7 +352,7 @@ local RotateAxes = {
 	{name = "-Z", dir = -vector_create(0, 0, 1), kdir = vector_create(-1, 0, 0), color = Color3_fromRGB(80, 140, 255)},
 }
 
-local ResizeAxes = {
+const ResizeAxes = {
 	{name = "+X", dir = vector_create(1, 0, 0)},
 	{name = "+Y", dir = vector_create(0, 1, 0)},
 	{name = "+Z", dir = vector_create(0, 0, 1)},
@@ -373,13 +373,13 @@ for _, axis in next, ResizeAxes do
 	axis.right, axis.up = computeAxisBasis(axis.dir)
 end
 
-local mouseRay = function()
+const mouseRay = function()
 	local loc = UserInputService:GetMouseLocation()
 	local unitRay = Camera:ViewportPointToRay(loc.X, loc.Y)
 	return unitRay.Origin, unitRay.Direction
 end
 
-local closestT = function(p1, d1, p2, d2)
+const closestT = @native function(p1, d1, p2, d2)
 	local r = p1 - p2
 	local a = vector_dot(d1, d1)
 	local e = vector_dot(d2, d2)
@@ -393,7 +393,7 @@ local closestT = function(p1, d1, p2, d2)
 	return (b * f - c * e) / denom
 end
 
-local rayPlaneHit = function(rayOrigin, rayDir, planePoint, planeNormal)
+const rayPlaneHit = @native function(rayOrigin, rayDir, planePoint, planeNormal)
 	local denom = vector_dot(rayDir, planeNormal)
 	if abs(denom) < 1e-6 then
 		return nil
@@ -405,25 +405,25 @@ local rayPlaneHit = function(rayOrigin, rayDir, planePoint, planeNormal)
 	return rayOrigin + rayDir * t
 end
 
-local withAxis = function(v, axisName, value)
+const withAxis = function(v, axisName, value)
 	return (axisName == "X" and vector_create(value, v.Y, v.Z)) or (axisName == "Y" and vector_create(v.X, value, v.Z)) or vector_create(v.X, v.Y, value)
 end
 
-local getAxisVal = function(v, axisName)
+const getAxisVal = function(v, axisName)
 	return (axisName == "X" and v.X) or (axisName == "Y" and v.Y) or v.Z
 end
 
-local axisExtent = function(size, dir)
+const axisExtent = function(size, dir)
 	return abs(dir.X) * size.X + abs(dir.Y) * size.Y + abs(dir.Z) * size.Z
 end
 
-local withAxisAligned = function(size, dir, newValue)
+const withAxisAligned = function(size, dir, newValue)
 	local mask = vector_create(abs(dir.X), abs(dir.Y), abs(dir.Z))
 	local keep = vector_one - mask
 	return size * keep + mask * newValue
 end
 
-local GetArcballVector = function(mousePos, viewportSize)
+const GetArcballVector = @native function(mousePos, viewportSize)
 	local x = (mousePos.X / viewportSize.X) * 2 - 1
 	local y = 1 - (mousePos.Y / viewportSize.Y) * 2
 
@@ -437,7 +437,7 @@ local GetArcballVector = function(mousePos, viewportSize)
 	end
 end
 
-local RotationBetween = function(v1, v2)
+const RotationBetween = @native function(v1, v2)
 	local axis = vector_cross(v1, v2)
 	local axisMag = vector_magnitude(axis)
 
@@ -454,8 +454,7 @@ local RotationBetween = function(v1, v2)
 		return CFrame_identity
 	end
 
-	local angle = acos(dot)
-	return CFrame_fromAxisAngle(vector_normalize(axis), angle)
+	return CFrame_fromAxisAngle(vector_normalize(axis), acos(dot))
 end
 
 ------------------------------------------------------------------------------------------------------------------------
@@ -468,7 +467,7 @@ local watchers = {}
 local hoveredWatcher, activeDragWatcher
 local inputChangedConn, inputBeganConn, inputEndedConn
 
-local function rayHitBoxAxis(o, d, h, tMin, tMax)
+const rayHitBoxAxis = @native function(o, d, h, tMin, tMax)
 	if abs(d) < 1e-8 then
 		if o < -h or o > h then
 			return nil, nil
@@ -487,7 +486,7 @@ local function rayHitBoxAxis(o, d, h, tMin, tMax)
 	return tMin, tMax
 end
 
-local rayHitBox = function(rayOrigin, rayDir, boxCFrame, boxSize)
+const rayHitBox = @native function(rayOrigin, rayDir, boxCFrame, boxSize)
 	local relOrigin = boxCFrame:PointToObjectSpace(rayOrigin)
 	local relDir = boxCFrame:VectorToObjectSpace(rayDir)
 	local halfSize = boxSize * 0.5
@@ -510,7 +509,7 @@ local rayHitBox = function(rayOrigin, rayDir, boxCFrame, boxSize)
 	return true, max(tMin, 0)
 end
 
-local getWorldCFrame = function(w)
+const getWorldCFrame = function(w)
 	local adornment = w._adornment
 	local adornee = adornment.Adornee
 	if not adornee then
@@ -527,8 +526,8 @@ local getWorldCFrame = function(w)
 	return adorneeCFrame * adornment.CFrame
 end
 
-local findBestHit = function()
-	local ro, rd = mouseRay()
+const findBestHit = @native function()
+	const ro, rd = mouseRay()
 	local best
 	local bestT = math.huge
 
@@ -555,13 +554,12 @@ local findBestHit = function()
 	return best
 end
 
-local updateHover = function()
+const updateHover = function()
 	if activeDragWatcher then
 		return
 	end
 
 	local best = findBestHit()
-
 	if best ~= hoveredWatcher then
 		if hoveredWatcher then
 			hoveredWatcher._hovering = false
@@ -575,19 +573,19 @@ local updateHover = function()
 	end
 end
 
-local watchdogCheckDrag = function()
+const watchdogCheckDrag = function()
 	local w = activeDragWatcher
 	if not w then return end
 
-	local input = w._dragInput
+	const input = w._dragInput
 	if input and input.UserInputState == Enum.UserInputState.End then
 		w:_internalEndDrag()
 	end
 end
 
-local onInputChanged = function()
+const onInputChanged = function()
 	if activeDragWatcher then
-		local ro, rd = mouseRay()
+		const ro, rd = mouseRay()
 		activeDragWatcher.DragChanged:Fire(ro, rd)
 		watchdogCheckDrag()
 	else
@@ -595,11 +593,11 @@ local onInputChanged = function()
 	end
 end
 
-local isRelevantInputType = function(inputType)
+const isRelevantInputType = function(inputType)
 	return inputType == MouseButton1 or inputType == Touch
 end
 
-local onInputBegan = function(input, gameProcessed)
+const onInputBegan = function(input, gameProcessed)
 	if gameProcessed or UserInputService:GetFocusedTextBox() then return end
 	if not isRelevantInputType(input.UserInputType) then return end
 	if activeDragWatcher then return end
@@ -614,7 +612,7 @@ local onInputBegan = function(input, gameProcessed)
 	end
 end
 
-local onInputEnded = function(input)
+const onInputEnded = function(input)
 	if not isRelevantInputType(input.UserInputType) then return end
 
 	if hoveredWatcher then
@@ -626,7 +624,7 @@ local onInputEnded = function(input)
 	end
 end
 
-local ensureConnected = function()
+const ensureConnected = function()
 	if not inputChangedConn then
 		inputChangedConn = UserInputService.InputChanged:Connect(onInputChanged)
 	end
@@ -638,7 +636,7 @@ local ensureConnected = function()
 	end
 end
 
-local disconnectIfIdle = function()
+const disconnectIfIdle = function()
 	if next(watchers) ~= nil then return end
 
 	if inputChangedConn then inputChangedConn:Disconnect(); inputChangedConn = nil end
@@ -649,7 +647,7 @@ end
 function Watcher.MakeRingHitTest(getCFrame, planeNormalLocal, radius, tolerance)
 	local tol = tolerance or 0.3
 
-	return function(rayOrigin, rayDir)
+	return @native function(rayOrigin, rayDir)
 		local cf = getCFrame()
 		local center = cf.Position
 		local normal = vector_normalize(cf:VectorToWorldSpace(planeNormalLocal))
@@ -676,7 +674,7 @@ function Watcher.MakeRingHitTest(getCFrame, planeNormalLocal, radius, tolerance)
 end
 
 function Watcher.MakeSphereHitTest(getCFrame, radiusOrFn)
-	return function(rayOrigin, rayDir)
+	return @native function(rayOrigin, rayDir)
 		local radius = type(radiusOrFn) == "function" and radiusOrFn() or radiusOrFn
 		local center = getCFrame().Position
 		local oc = rayOrigin - center
@@ -707,7 +705,7 @@ function Watcher.MakeCylinderHitTest(getCFrame, radius, height, axisLocal)
 	local axis = axisLocal or vector_create(0, 0, 1)
 	local halfHeight = height * 0.5
 
-	return function(rayOrigin, rayDir)
+	return @native function(rayOrigin, rayDir)
 		local cf = getCFrame()
 		local relOrigin = cf:PointToObjectSpace(rayOrigin)
 		local relDir = cf:VectorToObjectSpace(rayDir)
@@ -769,7 +767,7 @@ function Watcher.MakeCylinderHitTest(getCFrame, radius, height, axisLocal)
 	end
 end
 
-local getAdornmentWorldCFrame = function(adornment)
+const getAdornmentWorldCFrame = function(adornment)
 	local adornee = adornment.Adornee
 	if not adornee then
 		return CFrame_identity
@@ -1176,7 +1174,10 @@ MoveInstance.OnChanged = function(self, name, value)
 		self._isWorldSpace = (value == "World")
 		self:SyncHolder()
 	elseif name == "Visible" then
-		self:SetAdornmentsVisible({}, value)
+		local adornees = normalizeAdornees(rawget(self, "_data").Adornee)
+		if next(adornees) then
+			self:SetAdornmentsVisible({}, value)
+		end
 		self._originpoint.Visible = value
 		self:SyncHolder()
 	end
@@ -1528,7 +1529,10 @@ RotateInstance.OnChanged = function(self, name, value)
 		self._isWorldSpace = (value == "World")
 		self:SyncHolder()
 	elseif name == "Visible" then
-		self:SetAdornmentsVisible({}, value)
+		local adornees = normalizeAdornees(rawget(self, "_data").Adornee)
+		if next(adornees) then
+			self:SetAdornmentsVisible({}, value)
+		end
 		self._originpoint.Visible = value
 		self:SyncHolder()
 	end
@@ -2140,7 +2144,10 @@ ArcballInstance.OnChanged = function(self, name, value)
 		self._isWorldSpace = (value == "World")
 		self:SyncHolder()
 	elseif name == "Visible" then
-		self:SetAdornmentsVisible({}, value)
+		local adornees = normalizeAdornees(rawget(self, "_data").Adornee)
+		if next(adornees) then
+			self:SetAdornmentsVisible({}, value)
+		end
 		self:SyncHolder()
 	end
 end
