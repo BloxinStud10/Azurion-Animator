@@ -1490,6 +1490,8 @@ end
 --// AnimationTrack //
 local AnimationTrack = {}
 local AnimationTracks = {}
+
+AnimationTrack.__index = AnimationTrack
 AnimationTrack.__newIndex = function(self, a, b)
 	if not self._destroyed and (string_sub(a, 1, 1) ~= "_" and type(b) ~= "function") then
 		local old = self[a]
@@ -1661,6 +1663,7 @@ end
 
 AnimationTrack.Destroy = function(self)
 	self:Stop(0)
+	self.Changed:Destroy()
 	self.Stopped:Destroy()
 	self.DidLoop:Destroy()
 	for _, signal in next, self._markerReachedSignals do
@@ -1694,7 +1697,8 @@ end
 	self._fadeTarget = 0
 	self._fadeDuration = 0
 	self._stopping = false
-
+	
+	self.Changed = CreateSignal()
 	self.Stopped = CreateSignal()
 	self.DidLoop = CreateSignal()
 	self._markerReachedSignals = {}
