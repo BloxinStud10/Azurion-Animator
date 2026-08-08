@@ -1717,7 +1717,7 @@ local Register = @native function(Name, Sequence)
 	const isInstance = typeof(Sequence) == "Instance"
 	const isKeyframeSequence = isInstance and Sequence:IsA("KeyframeSequence")
 	
-	const Cache = AnimationDataCaches[CacheID]
+	const Cache = AnimationDataCaches[Name]
 	if Cache then
 		return Cache
 	end
