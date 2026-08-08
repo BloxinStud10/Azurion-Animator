@@ -1804,6 +1804,72 @@ local blend = @native function(contributions)
 	return blended or CFrame_identity
 end
 
+Animator._step = @native function(self, dt)
+	self.Stepped:Fire(dt)
+
+	local jointContrib = {}
+	local rootContrib = {}
+	local anyPlaying = false
+
+	for _, track in self._tracks do
+		if track.IsPlaying then
+			anyPlaying = true
+			track:_step(dt)
+
+			if track.WeightCurrent > 0 then
+				local pose = track:GetPoseAt(track.TimePosition)
+
+				for part1Name, cframe in pairs(pose.joints) do
+					jointContrib[part1Name] = jointContrib[part1Name] or {}
+					table_insert(jointContrib[part1Name], {cframe, track.WeightCurrent})
+				end
+
+				if pose.root then
+					table_insert(rootContrib, {self.RootBaseCFrame * pose.root, track.WeightCurrent})
+				end
+			end
+		end
+	end
+
+	if not anyPlaying then
+		return
+	end
+
+	for part1Name, motor in self._motorByPart1 do
+		local contributions = jointContrib[part1Name]
+		motor.Transform = contributions and blend(contributions) or CFrame.new()
+	end
+
+	if self.RootPart then
+		self.RootPart.CFrame = #rootContrib > 0 and blend(rootContrib) or self.RootBaseCFrame
+	end
+end
+
+function Animator:ResetRootBase()
+	self.RootBaseCFrame = self.RootPart and self.RootPart.CFrame or CFrame_identity
+end
+
+Animator.LoadAnimation = @native function(self, animationDataOrName)
+	local data = animationDataOrName
+	if type(data) == "string" then
+		data = GetAnimationDataWithName(data)
+	end
+
+	local track = AnimationTrack.new(self, data)
+	table_insert(self._tracks, track)
+	return track
+end
+
+Animator.GetPlayingAnimationTracks = @native function(self)
+	local tracks = {}
+	for _, track in self._tracks do
+		if track.IsPlaying then
+			table_insert(tracks, track)
+		end
+	end
+	return tracks
+end
+
 function Animator.new(rig)
 	assert(rig, "Animator.new: rig is required")
 
@@ -1873,73 +1939,6 @@ function Animator.new(rig)
 
 	Animators[rig] = self
 	return self
-end
-
-function Animator:ResetRootBase()
-	self.RootBaseCFrame = self.RootPart and self.RootPart.CFrame or CFrame_identity
-end
-
-Animator.LoadAnimation = @native function(self, animationDataOrName)
-	local data = animationDataOrName
-	if type(data) == "string" then
-		data = GetAnimationDataWithName(data)
-		assert(data, `LoadAnimation: no cached animation data named "{animationDataOrName}"`)
-	end
-
-	local track = AnimationTrack.new(self, data)
-	table_insert(self._tracks, track)
-	return track
-end
-
-Animator.GetPlayingAnimationTracks = @native function(self)
-	local tracks = {}
-	for _, track in self._tracks do
-		if track.IsPlaying then
-			table_insert(tracks, track)
-		end
-	end
-	return tracks
-end
-
-Animator._step = @native function(self, dt)
-	self.Stepped:Fire(dt)
-
-	local jointContrib = {}
-	local rootContrib = {}
-	local anyPlaying = false
-
-	for _, track in self._tracks do
-		if track.IsPlaying then
-			anyPlaying = true
-			track:_step(dt)
-
-			if track.WeightCurrent > 0 then
-				local pose = track:GetPoseAt(track.TimePosition)
-
-				for part1Name, cframe in pairs(pose.joints) do
-					jointContrib[part1Name] = jointContrib[part1Name] or {}
-					table_insert(jointContrib[part1Name], {cframe, track.WeightCurrent})
-				end
-
-				if pose.root then
-					table_insert(rootContrib, {self.RootBaseCFrame * pose.root, track.WeightCurrent})
-				end
-			end
-		end
-	end
-
-	if not anyPlaying then
-		return
-	end
-
-	for part1Name, motor in self._motorByPart1 do
-		local contributions = jointContrib[part1Name]
-		motor.Transform = contributions and blend(contributions) or CFrame.new()
-	end
-
-	if self.RootPart then
-		self.RootPart.CFrame = #rootContrib > 0 and blend(rootContrib) or self.RootBaseCFrame
-	end
 end
 
 Animator.Destroy = @native function(self)
