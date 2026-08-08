@@ -65,7 +65,7 @@ const Lerp = CFrame_identity.Lerp
 const HashString = @native function(s)
 	local hash = 2166136261
 	for i = 1, #s do
-		hash = bit32_bxor(hash, string_byte(str, i))
+		hash = bit32_bxor(hash, string_byte(s, i))
 		hash = (hash * 16777619) % 4294967296
 	end
 	return hash
@@ -467,7 +467,6 @@ const PoseEasingDirection = Enum.PoseEasingDirection
 const PoseEasingStyleLinear = PoseEasingStyle.Linear
 const PoseEasingDirectionIn = PoseEasingDirection.In
 
-local AnimationDatas = {}
 const GetValueFromCurve = function(Curve, Time)
 	if not Curve then
 		return nil
@@ -491,21 +490,12 @@ end
 const Extract = function(Name, Sequence)
 	assert(Sequence, "Attempt to get Animation Data from invalid Animation")
 	
-	if next(AnimationDatas) then
-		for _, Data in next, AnimationDatas do
-			if Data.Name == Name then
-				return Data
-			end
-		end
-	end
-	
-	AnimationData = {
+	local AnimationData = {
 		Name = Name,
 		Length = 0,
 		Keyframes = {},
 		Metadata = {}
 	}
-	table_insert(AnimationDatas, AnimationData)
 	
 	if Sequence:IsA("KeyframeSequence") then
 		local MaxTime = 0
@@ -1515,7 +1505,7 @@ AnimationTrack.AdjustSpeed = @native function(self, speed)
 end
 
 AnimationTrack.AdjustWeight = @native function(self, weight, fadeTime)
-	self.Weight = weight or 1
+	self.WeightTarget = weight or 1
 	self.FadeTime = fadeTime or 0.100000001
 end
 
@@ -1573,10 +1563,10 @@ AnimationTrack.GetPoseAt = @native function(self, t)
 
 	local result = {joints = {}, root = nil}
 
-	for _, pose1 in kf1.Pose do
+	for _, pose1 in kf1.Poses do
 		local key = `{pose1.Part0 or ""}->{pose1.Part1}`
 		local pose2 = kf2ByKey[key] or pose1
-		local eased = self:_easedAlpha(alpha, pose1.EasingDirection)
+		local eased = self:_easedAlpha(alpha, pose1.EasingStyle, pose1.EasingDirection)
 		local cframe = Lerp(pose1.CFrame, pose2.CFrame, eased)
 
 		if pose1.Part0 == nil then
@@ -1620,13 +1610,13 @@ AnimationTrack._step = @native function(self, dt)
 	end
 
 	if self._stopping and self.WeightCurrent <= 0 then
-		self.Playing = false
+		self.IsPlaying = false
 		self.TimePosition = 0
 		self.Stopped:Fire()
 	end
 end
 
-AnimationTrack.Play = @native function(fadeTime, weight, speed)
+AnimationTrack.Play = @native function(self, fadeTime, weight, speed)
 	fadeTime = fadeTime or self.FadeTime
 	self.Weight = weight or self.Weight or 1
 	self.Speed = speed or self.Speed
@@ -1635,22 +1625,22 @@ AnimationTrack.Play = @native function(fadeTime, weight, speed)
 	self._fadeDuration = fadeTime
 	self._stopping = false
 
-	if not self.Playing then
-		self.Playing = true
+	if not self.IsPlaying then
+		self.IsPlaying = true
 		self.TimePosition = 0
 	end
 end
 
-AnimationTrack.Stop = @native function(fadeTime)
+AnimationTrack.Stop = @native function(self, fadeTime)
 	fadeTime = fadeTime or self.FadeTime
 
-	if not self.Playing then
+	if not self.IsPlaying then
 		return
 	end
 
 	if fadeTime <= 0 then
 		self.WeightCurrent = 0
-		self.Playing = false
+		self.IsPlaying = false
 		self.TimePosition = 0
 		self.Stopped:Fire()
 		return
@@ -1665,7 +1655,7 @@ AnimationTrack.GetTimePosition = function(self)
 	return self.TimePosition
 end
 
-AnimationTrack.SetTimePosition(self, t)
+AnimationTrack.SetTimePosition = function(self, t)
 	self.TimePosition = math_clamp(t, 0, self.Length)
 end
 
@@ -1683,16 +1673,16 @@ end
 
 @native function AnimationTrack.new(animator, data)
 	assert(animator, "AnimationTrack: Animator is required")
-	assert(animationData and animationData.Keyframes, "AnimationTrack: Invalid animation data")
+	assert(data and data.Keyframes, "AnimationTrack: Invalid animation data")
 
 	local self = setmetatable({}, AnimationTrack)
 
 	self.Animator = animator
-	self.Name = animationData.Name or "AnimationTrack"
-	self._keyframes = animationData.Keyframes
-	self.Length = animationData.Length or (self._keyframes[#self._keyframes] and self._keyframes[#self._keyframes].Time) or 0
+	self.Name = data.Name or "AnimationTrack"
+	self._keyframes = data.Keyframes
+	self.Length = data.Length or (self._keyframes[#self._keyframes] and self._keyframes[#self._keyframes].Time) or 0
 
-	self.Playing = false
+	self.IsPlaying = false
 	self.Looped = false
 	self.Speed = 1
 	self.TimePosition = 0
@@ -1714,18 +1704,37 @@ end
 
 --// Animator //
 local Animator = {}
-local Animators = setmetatable({}, { __mode = "k" })
-local AnimationDataCache = {}
+local Animators = setmetatable({}, {__mode = "k"})
+local AnimationDataCache = Global._animationDataCaches
+if not AnimationDataCache then
+	AnimationDataCache = {}
+	Global._animationDataCache = AnimationDataCache
+end
 
-local RegisterAnimationData = @native function(data)
-	assert(type(data) == "table" and data.Keyframes, "RegisterAnimationData: invalid animation data")
-	assert(data.Name, "RegisterAnimationData: data.Name is required to register by name")
-	AnimationDataCache[data.Name] = data
-	return data
+local Register = @native function(Sequence)
+	const isInstance = typeof(Sequence) == "Instance"
+	const isKeyframeSequence = isInstance and Sequence:IsA("KeyframeSequence")
+	const CacheID = (isKeyframeSequence and Sequence) or (type(Sequence) == "buffer" and `#{buffer_len(Sequence)}`) or HashString(Sequence)
+	
+	const Cache = AnimationDataCaches[CacheID]
+	if Cache then
+		return Cache
+	end
+	
+	const Success, Data = pcall(isKeyframeSequence and Extract or Deserialize, Sequence)
+	if Success then
+		AnimationDataCaches[CacheID] = Data
+		return Data
+	end
+	return warn("Failed to Import.")
 end
 
 local GetAnimationDataWithName = @native function(name)
-	return AnimationDataCache[name]
+	for _, Data in next, AnimationDataCaches do
+		if Data.Name == Name then
+			return Data
+		end
+	end
 end
 
 local trackPartName = function(part, onRenamed)
@@ -1792,7 +1801,7 @@ local blend = @native function(contributions)
 	return blended or CFrame_identity
 end
 
-function Animator.new(rig: Model)
+function Animator.new(rig)
 	assert(rig, "Animator.new: rig is required")
 
 	local existing = Animators[rig]
@@ -1966,6 +1975,6 @@ Animator.Destroy = @native function(self)
 	setmetatable(self, nil)
 end
 
-Animator.RegisterAnimationData = RegisterAnimationData
+Animator.Register = Register
 
 return Animator
