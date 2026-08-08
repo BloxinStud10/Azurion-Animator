@@ -1711,30 +1711,33 @@ if not AnimationDataCache then
 	Global._animationDataCache = AnimationDataCache
 end
 
-local Register = @native function(Sequence)
+local Register = @native function(Name, Sequence)
+	assert(type(Name) == "string", "Unable to register Sequence with non-string type")
+	
 	const isInstance = typeof(Sequence) == "Instance"
 	const isKeyframeSequence = isInstance and Sequence:IsA("KeyframeSequence")
-	const CacheID = (isKeyframeSequence and Sequence) or (type(Sequence) == "buffer" and `#{buffer_len(Sequence)}`) or HashString(Sequence)
 	
 	const Cache = AnimationDataCaches[CacheID]
 	if Cache then
 		return Cache
 	end
 	
-	const Success, Data = pcall(isKeyframeSequence and Extract or Deserialize, Sequence)
-	if Success then
-		AnimationDataCaches[CacheID] = Data
+	local Data
+	if isKeyframeSequence then
+		Data = Extract(Name, Sequence)
+	else
+		Data = Deserialize(Sequence)
+		Data.Name = Name
+	end
+	if Data then
+		AnimationDataCaches[Name] = Data
 		return Data
 	end
 	return warn("Failed to Import.")
 end
 
 local GetAnimationDataWithName = @native function(name)
-	for _, Data in next, AnimationDataCaches do
-		if Data.Name == Name then
-			return Data
-		end
-	end
+	return AnimationDataCaches[name]
 end
 
 local trackPartName = function(part, onRenamed)
