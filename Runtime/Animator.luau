@@ -1705,7 +1705,7 @@ end
 --// Animator //
 local Animator = {}
 local Animators = setmetatable({}, {__mode = "k"})
-local AnimationDataCache = Global._animationDataCaches
+local AnimationDataCache = Global._animationDataCache
 if not AnimationDataCache then
 	AnimationDataCache = {}
 	Global._animationDataCache = AnimationDataCache
@@ -1730,14 +1730,14 @@ local Register = @native function(Name, Sequence)
 		Data.Name = Name
 	end
 	if Data then
-		AnimationDataCaches[Name] = Data
+		AnimationDataCache[Name] = Data
 		return Data
 	end
 	return warn("Failed to Import.")
 end
 
 local GetAnimationDataWithName = @native function(name)
-	return AnimationDataCaches[name]
+	return AnimationDataCache[name]
 end
 
 local trackPartName = function(part, onRenamed)
