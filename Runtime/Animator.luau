@@ -1704,6 +1704,8 @@ end
 
 --// Animator //
 local Animator = {}
+Animator.__index = Animator
+
 local Animators = setmetatable({}, {__mode = "k"})
 local AnimationDataCache = Global._animationDataCache
 if not AnimationDataCache then
