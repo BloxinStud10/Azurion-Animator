@@ -36,7 +36,7 @@ const GetAncestorKeyframe = function(Instance)
 	return Current
 end
 
-return function(Name, Sequence)
+return function(Name, Sequence, IncludeMetatable)
 	assert(Sequence, "Attempt to get Animation Data from invalid Animation")
 	
 	if next(AnimationDatas) then
@@ -50,8 +50,7 @@ return function(Name, Sequence)
 	AnimationData = {
 		Name = Name,
 		Length = 0,
-		Keyframes = {},
-		Metadata = {}
+		Keyframes = {}
 	}
 	table_insert(AnimationDatas, AnimationData)
 	
@@ -115,12 +114,16 @@ return function(Name, Sequence)
 		end)
 		
 		AnimationData.Length = MaxTime
-		AnimationData.Metadata.KeyframeCount = #AnimationData.Keyframes
-		AnimationData.Metadata.TotalPoses = 0
-		for _, Keyframe in next, AnimationData.Keyframes do
-			if Keyframe.Poses and next(Keyframe.Poses) then
-				AnimationData.Metadata.TotalPoses += #Keyframe.Poses
+		if IncludeMetatable then
+			local Metadata = {}
+			lMetadata.KeyframeCount = #AnimationData.Keyframes
+			Metadata.TotalPoses = 0
+			for _, Keyframe in next, AnimationData.Keyframes do
+				if Keyframe.Poses and next(Keyframe.Poses) then
+					Metadata.TotalPoses += #Keyframe.Poses
+				end
 			end
+			AnimationData.Metadata = Metadata
 		end
 	elseif Sequence:IsA("CurveAnimation") then
 		local MaxTime = 0
@@ -184,11 +187,14 @@ return function(Name, Sequence)
 		end
 
 		AnimationData.Length = MaxTime
-		AnimationData.Metadata.KeyframeCount = #AnimationData.Keyframes
-		AnimationData.Metadata.TotalPoses = 0
-
-		for _, Keyframe in next, AnimationData.Keyframes do
-			AnimationData.Metadata.TotalPoses += #Keyframe.Poses
+		if IncludeMetatable then
+			local Metatable = {}
+			AnimationData.Metadata.KeyframeCount = #AnimationData.Keyframes
+			AnimationData.Metadata.TotalPoses = 0
+			for _, Keyframe in next, AnimationData.Keyframes do
+				AnimationData.Metadata.TotalPoses += #Keyframe.Poses
+			end
+			AnimationData.Metadata = Metatable
 		end
 	end
 	
