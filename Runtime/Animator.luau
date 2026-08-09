@@ -7,8 +7,6 @@
 	Written by Epicatos :1
 ]=]
 
-const Global = shared or _G
-
 const game = game
 const setmetatable = setmetatable
 const tostring = tostring
@@ -24,6 +22,7 @@ const coroutine_resume = coroutine.resume
 const coroutine_running = coroutine.running
 const coroutine_yield = coroutine.yield
 const coroutine_status = coroutine.status
+const string_sub = string.sub
 const string_match = string.match
 const string_byte = string.byte
 const table_insert = table.insert
@@ -464,8 +463,7 @@ end
 --// Keyframe Extractor
 const PoseEasingStyle = Enum.PoseEasingStyle
 const PoseEasingDirection = Enum.PoseEasingDirection
-const PoseEasingStyleLinear = PoseEasingStyle.Linear
-const PoseEasingDirectionIn = PoseEasingDirection.In
+const AnimationPriority = Enum.AnimationPriority
 
 const GetValueFromCurve = function(Curve, Time)
 	if not Curve then
@@ -473,10 +471,20 @@ const GetValueFromCurve = function(Curve, Time)
 	end
 	if Curve:IsA("Vector3Curve") then
 		const X, Y, Z = table_unpack(Curve:GetValueAtTime(Time))
-		return vector.create(X or 0, Y or 0, Z or 0)
+		return vector_create(X or 0, Y or 0, Z or 0)
 	elseif Curve:IsA("EulerRotationCurve") then
 		return Curve:GetRotationAtTime(Time)
 	end
+end
+
+const GetPriorityValue = @native function(priority)
+	if type(priority) == "number" then
+		return priority
+	end
+	if typeof(priority) == "EnumItem" and priority.EnumType == AnimationPriority then
+		return priority.Value
+	end
+	return 0
 end
 
 const GetAncestorKeyframe = function(Instance)
@@ -492,6 +500,8 @@ const Extract = function(Name, Sequence)
 	
 	local AnimationData = {
 		Name = Name,
+		Loop = Sequence.Loop,
+		Priority = GetPriorityValue(Sequence.Priority),
 		Length = 0,
 		Keyframes = {},
 		Metadata = {}
@@ -542,10 +552,10 @@ const Extract = function(Name, Sequence)
 				CFrame = Pose.CFrame
 			}
 			
-			if EasingStyle.Name == PoseEasingStyleLinear then
+			if EasingStyle.Name ~= "Linear" then
 				PoseTable.EasingStyle = EasingStyle.Name
 			end
-			if EasingDirection == PoseEasingDirectionIn then
+			if EasingDirection ~= "In" then
 				PoseTable.EasingDirection = EasingDirection.Name
 			end
 			
@@ -1489,18 +1499,9 @@ end
 
 --// AnimationTrack //
 local AnimationTrack = {}
-local AnimationTracks = {}
-
 AnimationTrack.__index = AnimationTrack
-AnimationTrack.__newIndex = function(self, a, b)
-	if not self._destroyed and (string_sub(a, 1, 1) ~= "_" and type(b) ~= "function") then
-		local old = self[a]
-		if old ~= b then
-			self[a] = b
-			self.Changed:Fire(a, b)
-		end
-	end
-end
+
+local AnimationTracks = {}
 
 AnimationTrack.AdjustSpeed = @native function(self, speed)
 	self.Speed = speed or 1
@@ -1524,18 +1525,22 @@ AnimationTrack.GetTimeOfKeyframe = @native function(self, keyframeName)
 	return self._keyframeTimes[keyframeName] or warn("Could not find a keyframe by that name!")
 end
 
-AnimationTrack._findKeyframeIndex = @native function(self, t)
-	local kfs = self._keyframes
-	local lo, hi = 1, #kfs
-	if t <= kfs[1].Time then
+AnimationTrack._findTimelineIndex = @native function(self, timeline, cachedIndex, t)
+	local hi = #timeline
+	if t <= timeline[1].Time then
 		return 1
 	end
-	if t >= kfs[hi].Time then
+	if t >= timeline[hi].Time then
 		return hi
 	end
+	if cachedIndex and cachedIndex >= 1 and cachedIndex < hi
+		and timeline[cachedIndex].Time <= t and timeline[cachedIndex + 1].Time > t then
+		return cachedIndex
+	end
+	local lo = 1
 	while lo < hi do
 		local mid = (lo + hi + 1) // 2
-		if kfs[mid].Time <= t then
+		if timeline[mid].Time <= t then
 			lo = mid
 		else
 			hi = mid - 1
@@ -1550,32 +1555,36 @@ AnimationTrack._easedAlpha = @native function(self, alpha, style, direction)
 end
 
 AnimationTrack.GetPoseAt = @native function(self, t)
-	local kfs = self._keyframes
-	local i1 = self:_findKeyframeIndex(t)
-	local i2 = math_min(i1 + 1, #kfs)
-	local kf1, kf2 = kfs[i1], kfs[i2]
+	local result = {joints = {}, root = nil}
+	local jointCache = self._jointCache
 
-	local span = kf2.Time - kf1.Time
-	local alpha = span > 0 and math_clamp((t - kf1.Time) / span, 0, 1) or 0
+	for part1Name, timeline in self._jointTimelines do
+		local n = #timeline
+		local i1 = self:_findTimelineIndex(timeline, jointCache[part1Name], t)
+		jointCache[part1Name] = i1
+		local i2 = math_min(i1 + 1, n)
 
-	local kf2ByKey = {}
-	for _, pose in kf2.Poses do
-		kf2ByKey[`{pose.Part0 or ""}->{pose.Part1}`] = pose
+		local e1, e2 = timeline[i1], timeline[i2]
+		local span = e2.Time - e1.Time
+		local alpha = span > 0 and math_clamp((t - e1.Time) / span, 0, 1) or 0
+		local eased = self:_easedAlpha(alpha, e1.EasingStyle, e1.EasingDirection)
+
+		result.joints[part1Name] = Lerp(e1.CFrame, e2.CFrame, eased)
 	end
 
-	local result = {joints = {}, root = nil}
+	local rootTimeline = self._rootTimeline
+	local rn = #rootTimeline
+	if rn > 0 then
+		local i1 = self:_findTimelineIndex(rootTimeline, self._rootCache, t)
+		self._rootCache = i1
+		local i2 = math_min(i1 + 1, rn)
 
-	for _, pose1 in kf1.Poses do
-		local key = `{pose1.Part0 or ""}->{pose1.Part1}`
-		local pose2 = kf2ByKey[key] or pose1
-		local eased = self:_easedAlpha(alpha, pose1.EasingStyle, pose1.EasingDirection)
-		local cframe = Lerp(pose1.CFrame, pose2.CFrame, eased)
+		local e1, e2 = rootTimeline[i1], rootTimeline[i2]
+		local span = e2.Time - e1.Time
+		local alpha = span > 0 and math_clamp((t - e1.Time) / span, 0, 1) or 0
+		local eased = self:_easedAlpha(alpha, e1.EasingStyle, e1.EasingDirection)
 
-		if pose1.Part0 == nil then
-			result.root = cframe
-		else
-			result.joints[pose1.Part1] = cframe
-		end
+		result.root = Lerp(e1.CFrame, e2.CFrame, eased)
 	end
 
 	return result
@@ -1585,13 +1594,14 @@ AnimationTrack._step = @native function(self, dt)
 	if self._fadeDuration <= 0 then
 		self.WeightCurrent = self._fadeTarget
 	else
-		local rate = 1 / self._fadeDuration
-		local delta = self._fadeTarget - self.WeightCurrent
-		local maxStep = rate * dt
-		if math.abs(delta) <= maxStep then
+		self._fadeElapsed += dt
+
+		local alpha = math_clamp(self._fadeElapsed / self._fadeDuration, 0, 1)
+		self.WeightCurrent = math_lerp(self._fadeStart, self._fadeTarget, alpha)
+
+		if alpha >= 1 then
 			self.WeightCurrent = self._fadeTarget
-		else
-			self.WeightCurrent += (delta > 0 and maxStep or -maxStep)
+			self._fadeDuration = 0
 		end
 	end
 
@@ -1615,26 +1625,34 @@ AnimationTrack._step = @native function(self, dt)
 		self.IsPlaying = false
 		self.TimePosition = 0
 		self.Stopped:Fire()
+		self.Ended:Fire()
 	end
 end
 
 AnimationTrack.Play = @native function(self, fadeTime, weight, speed)
-	fadeTime = fadeTime or self.FadeTime
-	self.Weight = weight or self.Weight or 1
-	self.Speed = speed or self.Speed
+	fadeTime = fadeTime or 0.100000001
+	weight = weight or self.Weight or 1
+	speed = speed or 1
 
-	self._fadeTarget = self.Weight
+	self.Weight = weight
+	self.Speed = speed
+
+	self._fadeStart = self.WeightCurrent
+	self._fadeElapsed = 0
+	self._fadeTarget = weight
 	self._fadeDuration = fadeTime
 	self._stopping = false
 
-	if not self.IsPlaying then
+	if self.IsPlaying then
+		self:_step(0)
+	else
 		self.IsPlaying = true
 		self.TimePosition = 0
 	end
 end
 
 AnimationTrack.Stop = @native function(self, fadeTime)
-	fadeTime = fadeTime or self.FadeTime
+	fadeTime = fadeTime or 0.100000001
 
 	if not self.IsPlaying then
 		return
@@ -1642,12 +1660,16 @@ AnimationTrack.Stop = @native function(self, fadeTime)
 
 	if fadeTime <= 0 then
 		self.WeightCurrent = 0
+		self._fadeTarget = 0
 		self.IsPlaying = false
 		self.TimePosition = 0
 		self.Stopped:Fire()
+		self.Ended:Fire()
 		return
 	end
 
+	self._fadeStart = self.WeightCurrent
+	self._fadeElapsed = 0
 	self._fadeTarget = 0
 	self._fadeDuration = fadeTime
 	self._stopping = true
@@ -1663,7 +1685,7 @@ end
 
 AnimationTrack.Destroy = function(self)
 	self:Stop(0)
-	self.Changed:Destroy()
+	self.Ended:Destroy()
 	self.Stopped:Destroy()
 	self.DidLoop:Destroy()
 	for _, signal in next, self._markerReachedSignals do
@@ -1686,7 +1708,7 @@ end
 	self.Length = data.Length or (self._keyframes[#self._keyframes] and self._keyframes[#self._keyframes].Time) or 0
 
 	self.IsPlaying = false
-	self.Looped = false
+	self.Looped = data.Loop or false
 	self.Speed = 1
 	self.TimePosition = 0
 
@@ -1694,12 +1716,45 @@ end
 	self.WeightCurrent = 0
 	self.FadeTime = 0.1
 
+	self.Priority = data.Priority or 0
+
+	self._fadeStart = 0
+	self._fadeElapsed = 0
 	self._fadeTarget = 0
 	self._fadeDuration = 0
 	self._stopping = false
 	
-	self.Changed = CreateSignal()
+	local jointTimelines = {}
+	local rootTimeline = {}
+
+	for _, kf in self._keyframes do
+		local time = kf.Time
+		for _, pose in kf.Poses do
+			local entry = {
+				Time = time,
+				CFrame = pose.CFrame,
+				EasingStyle = pose.EasingStyle,
+				EasingDirection = pose.EasingDirection,
+			}
+			if pose.Part0 == nil then
+				table_insert(rootTimeline, entry)
+			else
+				local list = jointTimelines[pose.Part1]
+				if not list then
+					list = {}
+					jointTimelines[pose.Part1] = list
+				end
+				table_insert(list, entry)
+			end
+		end
+	end
+	self._jointTimelines = jointTimelines
+	self._rootTimeline = rootTimeline
+	self._jointCache = {}
+	self._rootCache = nil
+
 	self.Stopped = CreateSignal()
+	self.Ended = CreateSignal()
 	self.DidLoop = CreateSignal()
 	self._markerReachedSignals = {}
 
@@ -1711,11 +1766,7 @@ local Animator = {}
 Animator.__index = Animator
 
 local Animators = setmetatable({}, {__mode = "k"})
-local AnimationDataCache = Global._animationDataCache
-if not AnimationDataCache then
-	AnimationDataCache = {}
-	Global._animationDataCache = AnimationDataCache
-end
+local AnimationDataCache = {}
 
 local Register = @native function(Name, Sequence)
 	assert(type(Name) == "string", "Unable to register Sequence with non-string type")
@@ -1813,8 +1864,14 @@ end
 Animator._step = @native function(self, dt)
 	self.Stepped:Fire(dt)
 
-	local jointContrib = {}
-	local rootContrib = {}
+	local rootPriority = nil
+	local jointContrib = self._jointContribScratch
+	local jointPriority = self._jointPriorityScratch
+	local rootContrib = self._rootContribScratch
+	table_clear(jointContrib)
+	table_clear(jointPriority)
+	table_clear(rootContrib)
+
 	local anyPlaying = false
 
 	for _, track in self._tracks do
@@ -1822,16 +1879,33 @@ Animator._step = @native function(self, dt)
 			anyPlaying = true
 			track:_step(dt)
 
-			if track.WeightCurrent > 0 then
+			local weight = track.WeightCurrent
+			if weight > 0 then
+				local priority = GetPriorityValue(track.Priority)
 				local pose = track:GetPoseAt(track.TimePosition)
 
-				for part1Name, cframe in pairs(pose.joints) do
-					jointContrib[part1Name] = jointContrib[part1Name] or {}
-					table_insert(jointContrib[part1Name], {cframe, track.WeightCurrent})
+				for part1Name, cframe in pose.joints do
+					local currentPriority = jointPriority[part1Name]
+
+					if currentPriority == nil or priority > currentPriority then
+						jointPriority[part1Name] = priority
+						jointContrib[part1Name] = {
+							{cframe, weight}
+						}
+					elseif priority == currentPriority then
+						table_insert(jointContrib[part1Name], {cframe, weight})
+					end
 				end
 
 				if pose.root then
-					table_insert(rootContrib, {self.RootBaseCFrame * pose.root, track.WeightCurrent})
+					if rootPriority == nil or priority > rootPriority then
+						rootPriority = priority
+						rootContrib = {
+							{self.RootBaseCFrame * pose.root, weight}
+						}
+					elseif priority == rootPriority then
+						table_insert(rootContrib, {self.RootBaseCFrame * pose.root, weight})
+					end
 				end
 			end
 		end
@@ -1843,10 +1917,11 @@ Animator._step = @native function(self, dt)
 
 	for part1Name, motor in self._motorByPart1 do
 		local contributions = jointContrib[part1Name]
-		motor.Transform = contributions and blend(contributions) or CFrame.new()
+
+		motor.Transform = contributions and blend(contributions) or CFrame_identity
 	end
 
-	if self.RootPart then
+	if self._options.ApplyRootMotion and self.RootPart then
 		self.RootPart.CFrame = #rootContrib > 0 and blend(rootContrib) or self.RootBaseCFrame
 	end
 end
@@ -1876,7 +1951,7 @@ Animator.GetPlayingAnimationTracks = @native function(self)
 	return tracks
 end
 
-function Animator.new(rig)
+function Animator.new(rig, options)
 	assert(rig, "Animator.new: rig is required")
 
 	local existing = Animators[rig]
@@ -1890,13 +1965,18 @@ function Animator.new(rig)
 	self.RootPart = rig.PrimaryPart or rig:FindFirstChild("HumanoidRootPart")
 
 	self.RootBaseCFrame = self.RootPart and self.RootPart.CFrame or CFrame_identity
-
+	
+	self._options = options or {}
 	self._destroyed = false
 	self._tracks = {}
 	self._motorByPart1 = {}
 	self._joints = {}
 	self._jointTrackers = {}
 	self._connections = {}
+	
+	self._jointContribScratch = {}
+	self._jointPriorityScratch = {}
+	self._rootContribScratch = {}
 
 	self.Stepped = CreateSignal()
 	self.AnimationPlayed = CreateSignal()
