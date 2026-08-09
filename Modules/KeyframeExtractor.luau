@@ -11,8 +11,7 @@ const table_sort = table.sort
 
 const PoseEasingStyle = Enum.PoseEasingStyle
 const PoseEasingDirection = Enum.PoseEasingDirection
-const PoseEasingStyleLinear = PoseEasingStyle.Linear
-const PoseEasingDirectionIn = PoseEasingDirection.In
+const AnimationPriority = Enum.AnimationPriority
 
 local AnimationDatas = {}
 
@@ -26,6 +25,16 @@ const GetValueFromCurve = function(Curve, Time)
 	elseif Curve:IsA("EulerRotationCurve") then
 		return Curve:GetRotationAtTime(Time)
 	end
+end
+
+const GetPriorityValue = @native function(priority)
+	if type(priority) == "number" then
+		return priority
+	end
+	if typeof(priority) == "EnumItem" and priority.EnumType == AnimationPriority then
+		return priority.Value
+	end
+	return 0
 end
 
 const GetAncestorKeyframe = function(Instance)
@@ -49,6 +58,8 @@ return function(Name, Sequence, IncludeMetatable)
 	
 	AnimationData = {
 		Name = Name,
+		Loop = Sequence.Loop,
+		Priority = GetPriorityValue(Sequence.Priority),
 		Length = 0,
 		Keyframes = {}
 	}
@@ -93,18 +104,9 @@ return function(Name, Sequence, IncludeMetatable)
 			
 			local EasingStyle, EasingDirection = Pose.EasingStyle, Pose.EasingDirection
 			
-			local PoseTable = {
-				Part0 = Part0Name,
-				Part1 = Part1Name,
-				CFrame = Pose.CFrame
-			}
-			
-			if EasingStyle.Name == PoseEasingStyleLinear then
-				PoseTable.EasingStyle = EasingStyle.Name
-			end
-			if EasingDirection == PoseEasingDirectionIn then
-				PoseTable.EasingDirection = EasingDirection.Name
-			end
+			local PoseTable = {Part0Name, Part1Name, Pose.CFrame}
+			if EasingStyle ~= "Linear" then PoseTable[4] = EasingStyle.Name end
+			if EasingDirection ~= "In" then PoseTable[5] = EasingDirection.Name end
 			
 			table_insert(KeyframeData.Poses, PoseTable)
 		end
@@ -161,12 +163,7 @@ return function(Name, Sequence, IncludeMetatable)
 				local Part1Name = Track.Name
 				local Part0Name = (ParentTrack ~= Sequence and ParentTrack.Name) or nil
 				
-				local PoseData = {
-					Part0 = Part0Name,
-					Part1 = Part1Name,
-					CFrame = Rotation + Position
-				}
-				
+				local PoseTable = {Part0Name, Part1Name, Rotation + Position}
 				table_insert(Keyframe.Poses, PoseData)
 
 				if Time > MaxTime then
