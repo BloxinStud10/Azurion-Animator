@@ -495,17 +495,25 @@ const GetAncestorKeyframe = function(Instance)
 	return Current
 end
 
-const Extract = function(Name, Sequence)
+const Extract = function(Name, Sequence, IncludeMetatable)
 	assert(Sequence, "Attempt to get Animation Data from invalid Animation")
 	
-	local AnimationData = {
+	if next(AnimationDatas) then
+		for _, Data in next, AnimationDatas do
+			if Data.Name == Name then
+				return Data
+			end
+		end
+	end
+	
+	AnimationData = {
 		Name = Name,
 		Loop = Sequence.Loop,
 		Priority = GetPriorityValue(Sequence.Priority),
 		Length = 0,
-		Keyframes = {},
-		Metadata = {}
+		Keyframes = {}
 	}
+	table_insert(AnimationDatas, AnimationData)
 	
 	if Sequence:IsA("KeyframeSequence") then
 		local MaxTime = 0
@@ -546,18 +554,9 @@ const Extract = function(Name, Sequence)
 			
 			local EasingStyle, EasingDirection = Pose.EasingStyle, Pose.EasingDirection
 			
-			local PoseTable = {
-				Part0 = Part0Name,
-				Part1 = Part1Name,
-				CFrame = Pose.CFrame
-			}
-			
-			if EasingStyle.Name ~= "Linear" then
-				PoseTable.EasingStyle = EasingStyle.Name
-			end
-			if EasingDirection ~= "In" then
-				PoseTable.EasingDirection = EasingDirection.Name
-			end
+			local PoseTable = {Part0Name, Part1Name, Pose.CFrame}
+			if EasingStyle ~= "Linear" then PoseTable[4] = EasingStyle.Name end
+			if EasingDirection ~= "In" then PoseTable[5] = EasingDirection.Name end
 			
 			table_insert(KeyframeData.Poses, PoseTable)
 		end
@@ -567,12 +566,16 @@ const Extract = function(Name, Sequence)
 		end)
 		
 		AnimationData.Length = MaxTime
-		AnimationData.Metadata.KeyframeCount = #AnimationData.Keyframes
-		AnimationData.Metadata.TotalPoses = 0
-		for _, Keyframe in next, AnimationData.Keyframes do
-			if Keyframe.Poses and next(Keyframe.Poses) then
-				AnimationData.Metadata.TotalPoses += #Keyframe.Poses
+		if IncludeMetatable then
+			local Metadata = {}
+			lMetadata.KeyframeCount = #AnimationData.Keyframes
+			Metadata.TotalPoses = 0
+			for _, Keyframe in next, AnimationData.Keyframes do
+				if Keyframe.Poses and next(Keyframe.Poses) then
+					Metadata.TotalPoses += #Keyframe.Poses
+				end
 			end
+			AnimationData.Metadata = Metadata
 		end
 	elseif Sequence:IsA("CurveAnimation") then
 		local MaxTime = 0
@@ -610,12 +613,7 @@ const Extract = function(Name, Sequence)
 				local Part1Name = Track.Name
 				local Part0Name = (ParentTrack ~= Sequence and ParentTrack.Name) or nil
 				
-				local PoseData = {
-					Part0 = Part0Name,
-					Part1 = Part1Name,
-					CFrame = Rotation + Position
-				}
-				
+				local PoseTable = {Part0Name, Part1Name, Rotation + Position}
 				table_insert(Keyframe.Poses, PoseData)
 
 				if Time > MaxTime then
@@ -636,11 +634,14 @@ const Extract = function(Name, Sequence)
 		end
 
 		AnimationData.Length = MaxTime
-		AnimationData.Metadata.KeyframeCount = #AnimationData.Keyframes
-		AnimationData.Metadata.TotalPoses = 0
-
-		for _, Keyframe in next, AnimationData.Keyframes do
-			AnimationData.Metadata.TotalPoses += #Keyframe.Poses
+		if IncludeMetatable then
+			local Metatable = {}
+			AnimationData.Metadata.KeyframeCount = #AnimationData.Keyframes
+			AnimationData.Metadata.TotalPoses = 0
+			for _, Keyframe in next, AnimationData.Keyframes do
+				AnimationData.Metadata.TotalPoses += #Keyframe.Poses
+			end
+			AnimationData.Metadata = Metatable
 		end
 	end
 	
@@ -1595,10 +1596,8 @@ AnimationTrack._step = @native function(self, dt)
 		self.WeightCurrent = self._fadeTarget
 	else
 		self._fadeElapsed += dt
-
 		local alpha = math_clamp(self._fadeElapsed / self._fadeDuration, 0, 1)
 		self.WeightCurrent = math_lerp(self._fadeStart, self._fadeTarget, alpha)
-
 		if alpha >= 1 then
 			self.WeightCurrent = self._fadeTarget
 			self._fadeDuration = 0
@@ -1615,8 +1614,10 @@ AnimationTrack._step = @native function(self, dt)
 			self.TimePosition = self.Length
 			if not self._stopping then
 				self._stopping = true
+				self._fadeStart = self.WeightCurrent
+				self._fadeElapsed = 0
 				self._fadeTarget = 0
-				self._fadeDuration = 0
+				self._fadeDuration = self.FadeTime > 0 and self.FadeTime or 0.15
 			end
 		end
 	end
@@ -1732,17 +1733,17 @@ end
 		for _, pose in kf.Poses do
 			local entry = {
 				Time = time,
-				CFrame = pose.CFrame,
-				EasingStyle = pose.EasingStyle,
-				EasingDirection = pose.EasingDirection,
+				CFrame = pose[3],
+				EasingStyle = pose[4],
+				EasingDirection = pose[5]
 			}
-			if pose.Part0 == nil then
+			if pose[1] == nil then
 				table_insert(rootTimeline, entry)
 			else
-				local list = jointTimelines[pose.Part1]
+				local list = jointTimelines[pose[2]]
 				if not list then
 					list = {}
-					jointTimelines[pose.Part1] = list
+					jointTimelines[pose[2]] = list
 				end
 				table_insert(list, entry)
 			end
@@ -1781,7 +1782,7 @@ local Register = @native function(Name, Sequence)
 	
 	local Data
 	if isKeyframeSequence then
-		Data = Extract(Name, Sequence)
+		Data = Extract(Name, Sequence, false)
 	else
 		Data = Deserialize(Sequence)
 		Data.Name = Name
@@ -2018,8 +2019,12 @@ function Animator.new(rig, options)
 			onJointRemoving(inst)
 		end
 	end))
-
+	
+	self._lastClock = osclock()
 	self._preanimationConnection = PreAnimation:Connect(function(dt)
+		local now = osclock()
+		local dt = now - self._lastClock
+		self._lastClock = now
 		self:_step(dt)
 	end)
 
