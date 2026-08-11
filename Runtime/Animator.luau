@@ -70,68 +70,6 @@ const HashString = @native function(s)
 	return hash
 end
 
---[[
-
-           +++                                                                                      
-       ++++++++   ===                                                                               
-    ++++++++++   ====                                                  ====                         
-     ++++++                                                            ====                         
-       +++++     ====     ====== =====  ==== =======      ========     ====        ====             
-        +++++    ====    =============  =============    ===========   ====        ====             
-         ++++    ====   ====     =====  =====    ====           ====   ====        ====             
-         ++++    ====   ====     =====  =====    ====     ==========   ====    =============        
-         ++++    ====   ====     =====  =====    ====   ======  ====   ====    =============        
-       ++++++    ====   =====   ======  =====    ====  ====     ====   ====        ====    +++++++++
-   ++++++++++    ====    =============  =====    ====   ============   ====   ++++ ==== ++++++++++++
-  +++++++        ====            =====  ====     ====   + ====  ====   ==== ++++++++  ++++++++      
- +++++                  ==== +++ ==== +++++++++++++++++++++++++++++++++++++++++++++++++++++         
- ++++        +++++++++++ =========== +++++++++++++++++++++++++++++++++++++++      ++++++            
-+++++++++++++++++++++++++++                                                         +               
- +++++++++++++++++++++++++                                                                          
-      +++++                                                                                         
-
-v3.7.2
-
-An exceptionally fast, lightweight, and elegant open-source signal
-library for Luau — with generic types and detailed documentation.
-
-
-GitHub (repository):
-https://github.com/AlexanderLindholt/SignalPlus
-
-GitBook (documentation):
-https://alexxander.gitbook.io/SignalPlus
-
-DevForum (topic):
-https://devforum.roblox.com/t/3552231
-
-
---------------------------------------------------------------------------------
-MIT License
-
-Copyright (c) 2025 Alexander Lindholt
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
---------------------------------------------------------------------------------
-
-]]--
-
 export type Signal<Parameters...> = {
 	Connect: typeof(
 		function(signal: Signal<Parameters...>, callback: (Parameters...) -> ()): Connection end
@@ -495,6 +433,8 @@ const GetAncestorKeyframe = function(Instance)
 	return Current
 end
 
+local AnimationDatas = {}
+
 const Extract = function(Name, Sequence, IncludeMetatable)
 	assert(Sequence, "Attempt to get Animation Data from invalid Animation")
 	
@@ -506,7 +446,7 @@ const Extract = function(Name, Sequence, IncludeMetatable)
 		end
 	end
 	
-	AnimationData = {
+	local AnimationData = {
 		Name = Name,
 		Loop = Sequence.Loop,
 		Priority = GetPriorityValue(Sequence.Priority),
@@ -568,7 +508,7 @@ const Extract = function(Name, Sequence, IncludeMetatable)
 		AnimationData.Length = MaxTime
 		if IncludeMetatable then
 			local Metadata = {}
-			lMetadata.KeyframeCount = #AnimationData.Keyframes
+			Metadata.KeyframeCount = #AnimationData.Keyframes
 			Metadata.TotalPoses = 0
 			for _, Keyframe in next, AnimationData.Keyframes do
 				if Keyframe.Poses and next(Keyframe.Poses) then
@@ -614,7 +554,7 @@ const Extract = function(Name, Sequence, IncludeMetatable)
 				local Part0Name = (ParentTrack ~= Sequence and ParentTrack.Name) or nil
 				
 				local PoseTable = {Part0Name, Part1Name, Rotation + Position}
-				table_insert(Keyframe.Poses, PoseData)
+				table_insert(Keyframe.Poses, PoseTable)
 
 				if Time > MaxTime then
 					MaxTime = Time
@@ -635,13 +575,13 @@ const Extract = function(Name, Sequence, IncludeMetatable)
 
 		AnimationData.Length = MaxTime
 		if IncludeMetatable then
-			local Metatable = {}
-			AnimationData.Metadata.KeyframeCount = #AnimationData.Keyframes
-			AnimationData.Metadata.TotalPoses = 0
+			local Metadata = {}
+			Metadata.KeyframeCount = #AnimationData.Keyframes
+			Metadata.TotalPoses = 0
 			for _, Keyframe in next, AnimationData.Keyframes do
-				AnimationData.Metadata.TotalPoses += #Keyframe.Poses
+				Metadata.TotalPoses += #Keyframe.Poses
 			end
-			AnimationData.Metadata = Metatable
+			AnimationData.Metadata = Metadata
 		end
 	end
 	
@@ -747,18 +687,12 @@ const FabricDecelerate = Bezier(0.1, 0.9, 0.2, 1) -- used for entering.
 -- @specs https://docs.microsoft.com/en-us/windows/uwp/design/motion/timing-and-easing
 const UWPAccelerate = Bezier(0.7, 0, 1, 0.5)
 
--- @specs https://www.ibm.com/design/language/elements/motion/basics
-
--- Productivity and Expression are both essential to an interface. Reserve Expressive motion for occasional, important moments to better capture user’s attention, and offer rhythmic break to the productive experience.
--- Use standard-easing when an element is visible from the beginning to end of a motion. Tiles expanding and table rows sorting are good examples.
 const StandardProductive = Bezier(0.2, 0, 0.38, 0.9)
 const StandardExpressive = Bezier(0.4, 0.14, 0.3, 1)
 
--- Use entrance-easing when adding elements to the view such as a modal or toaster appearing, or moving in response to users’ input, such as dropdown opening or toggle. An element quickly appears and slows down to a stop.
 const EntranceProductive = Bezier(0, 0, 0.38, 0.9)
 const EntranceExpressive = Bezier(0, 0, 0.3, 1)
 
--- Use exit-easing when removing elements from view, such as closing a modal or toaster. The element speeds up as it exits from view, implying that its departure from the screen is permanent.
 const ExitProductive = Bezier(0.2, 0, 1, 0.9)
 const ExitExpressive = Bezier(0.4, 0.14, 1, 1)
 
@@ -1502,8 +1436,6 @@ end
 local AnimationTrack = {}
 AnimationTrack.__index = AnimationTrack
 
-local AnimationTracks = {}
-
 AnimationTrack.AdjustSpeed = @native function(self, speed)
 	self.Speed = speed or 1
 end
@@ -1773,7 +1705,6 @@ local Register = @native function(Name, Sequence)
 	assert(type(Name) == "string", "Unable to register Sequence with non-string type")
 	
 	const isInstance = typeof(Sequence) == "Instance"
-	const isKeyframeSequence = isInstance and Sequence:IsA("KeyframeSequence")
 	
 	const Cache = AnimationDataCache[Name]
 	if Cache then
@@ -1781,7 +1712,7 @@ local Register = @native function(Name, Sequence)
 	end
 	
 	local Data
-	if isKeyframeSequence then
+	if isInstance then
 		Data = Extract(Name, Sequence, false)
 	else
 		Data = Deserialize(Sequence)
@@ -1804,45 +1735,89 @@ local trackPartName = function(part, onRenamed)
 	end)
 end
 
+local GetJointParts = @native function(joint)
+	if joint:IsA("Motor6D") then
+		return joint.Part0, joint.Part1
+	elseif joint:IsA("AnimationConstraint") then
+		local attachment0, attachment1 = joint.Attachment0, joint.Attachment1
+		return attachment0 and attachment0.Parent, attachment1 and attachment1.Parent
+	end
+	return nil, nil
+end
+
 local trackJoint = function(joint, onSet, onUnset)
-	local currentName, nameConnection
+	local currentPart0Name, currentPart1Name
+	local nameConnections = {}
+
+	local clearNameConnections = function()
+		for _, connection in nameConnections do
+			connection:Disconnect()
+		end
+		table_clear(nameConnections)
+	end
 
 	local unbind = function()
-		if currentName then
-			onUnset(currentName)
-			currentName = nil
+		if currentPart1Name then
+			onUnset(currentPart0Name, currentPart1Name)
+			currentPart0Name, currentPart1Name = nil, nil
 		end
-		if nameConnection then
-			nameConnection:Disconnect()
-			nameConnection = nil
+		clearNameConnections()
+	end
+
+	local bind = function(part0, part1)
+		if not part1 then
+			return
+		end
+
+		currentPart0Name = part0 and part0.Name or nil
+		currentPart1Name = part1.Name
+		onSet(currentPart0Name, currentPart1Name, joint)
+
+		table_insert(nameConnections, trackPartName(part1, function(newName)
+			onUnset(currentPart0Name, currentPart1Name)
+			currentPart1Name = newName
+			onSet(currentPart0Name, currentPart1Name, joint)
+		end))
+
+		if part0 then
+			table_insert(nameConnections, trackPartName(part0, function(newName)
+				onUnset(currentPart0Name, currentPart1Name)
+				currentPart0Name = newName
+				onSet(currentPart0Name, currentPart1Name, joint)
+			end))
 		end
 	end
 
-	local bind = function(part1)
-		currentName = part1.Name
-		onSet(currentName, joint)
-		nameConnection = trackPartName(part1, function(newName)
-			onUnset(currentName)
-			currentName = newName
-			onSet(currentName, joint)
-		end)
-	end
-
-	if joint.Part1 then
-		bind(joint.Part1)
-	end
-
-	local part1Connection = joint:GetPropertyChangedSignal("Part1"):Connect(function()
+	local rebind = function()
 		unbind()
-		if joint.Part1 then
-			bind(joint.Part1)
-		end
-	end)
+		local part0, part1 = GetJointParts(joint)
+		bind(part0, part1)
+	end
+
+	rebind()
+
+	local structureConnections = {}
+	if joint:IsA("Motor6D") then
+		table_insert(structureConnections, joint:GetPropertyChangedSignal("Part0"):Connect(rebind))
+		table_insert(structureConnections, joint:GetPropertyChangedSignal("Part1"):Connect(rebind))
+	elseif joint:IsA("AnimationConstraint") then
+		table_insert(structureConnections, joint:GetPropertyChangedSignal("Attachment0"):Connect(rebind))
+		table_insert(structureConnections, joint:GetPropertyChangedSignal("Attachment1"):Connect(rebind))
+	end
 
 	return function()
-		part1Connection:Disconnect()
+		for _, connection in structureConnections do
+			connection:Disconnect()
+		end
 		unbind()
 	end
+end
+
+local UsesTransform = @native function(joint)
+	if typeof(joint) == "Instance" then
+		return joint:IsA("Motor6D") or joint:IsA("AnimationConstraint")
+	end
+	return joint.Transform ~= nil
 end
 
 local blend = @native function(contributions)
@@ -1918,8 +1893,13 @@ Animator._step = @native function(self, dt)
 
 	for part1Name, motor in self._motorByPart1 do
 		local contributions = jointContrib[part1Name]
+		local pose = contributions and blend(contributions) or CFrame_identity
 
-		motor.Transform = contributions and blend(contributions) or CFrame_identity
+		if self._motorUsesTransform[part1Name] then
+			motor.Transform = pose
+		else
+			motor.C0 = self._motorRestC0[part1Name] * pose
+		end
 	end
 
 	if self._options.ApplyRootMotion and self.RootPart then
@@ -1952,22 +1932,33 @@ Animator.GetPlayingAnimationTracks = @native function(self)
 	return tracks
 end
 
-function Animator.new(rig, options)
-	assert(rig, "Animator.new: rig is required")
+function Animator.new(config)
+	if typeof(config) == "Instance" then
+		config = {Rig = config}
+	else
+		config = config or {}
+	end
+	local rig = config.Rig
+	local joints = config.Joints
 
-	local existing = Animators[rig]
-	if existing then
-		return existing
+	local isRealRig = rig and typeof(rig) == "Instance"
+	assert(rig ~= nil or joints ~= nil, "Animator.new: config.Rig or config.Joints is required")
+
+	if isRealRig then
+		local existing = Animators[rig]
+		if existing then
+			return existing
+		end
 	end
 
 	local self = setmetatable({}, Animator)
 
 	self.Rig = rig
-	self.RootPart = rig.PrimaryPart or rig:FindFirstChild("HumanoidRootPart")
+	self.RootPart = config.RootPart or (isRealRig and (rig.PrimaryPart or rig:FindFirstChild("HumanoidRootPart")))
 
 	self.RootBaseCFrame = self.RootPart and self.RootPart.CFrame or CFrame_identity
 	
-	self._options = options or {}
+	self._options = config
 	self._destroyed = false
 	self._tracks = {}
 	self._motorByPart1 = {}
@@ -1978,20 +1969,37 @@ function Animator.new(rig, options)
 	self._jointContribScratch = {}
 	self._jointPriorityScratch = {}
 	self._rootContribScratch = {}
+	self._motorUsesTransform = {}
+	self._motorRestC0 = {}
 
 	self.Stepped = CreateSignal()
 	self.AnimationPlayed = CreateSignal()
+
+	local registerMotor = function(part1Name, joint)
+		self._motorByPart1[part1Name] = joint
+
+		local usesTransform = UsesTransform(joint)
+		self._motorUsesTransform[part1Name] = usesTransform
+		if not usesTransform then
+			local ok, restC0 = pcall(function()
+				return joint.C0
+			end)
+			self._motorRestC0[part1Name] = (ok and restC0) or CFrame_identity
+		end
+	end
 
 	local onJointAdded = function(joint)
 		if self._jointTrackers[joint] then
 			return
 		end
 		self._joints[joint] = true
-		self._jointTrackers[joint] = trackJoint(joint, function(name, j)
-			self._motorByPart1[name] = j
-		end, function(name)
-			if self._motorByPart1[name] == joint then
-				self._motorByPart1[name] = nil
+		self._jointTrackers[joint] = trackJoint(joint, function(part0Name, part1Name, j)
+			registerMotor(part1Name, j)
+		end, function(part0Name, part1Name)
+			if self._motorByPart1[part1Name] == joint then
+				self._motorByPart1[part1Name] = nil
+				self._motorUsesTransform[part1Name] = nil
+				self._motorRestC0[part1Name] = nil
 			end
 		end)
 	end
@@ -2005,30 +2013,51 @@ function Animator.new(rig, options)
 		self._joints[joint] = nil
 	end
 
-	for _, inst in rig:QueryDescendants("Motor6D") do
-		onJointAdded(inst)
-	end
-
-	table_insert(self._connections, rig.DescendantAdded:Connect(function(inst)
-		if inst:IsA("Motor6D") then
+	if isRealRig then
+		for _, inst in rig:QueryDescendants("Motor6D") do
 			onJointAdded(inst)
 		end
-	end))
-	table_insert(self._connections, rig.DescendantRemoving:Connect(function(inst)
-		if inst:IsA("Motor6D") then
-			onJointRemoving(inst)
+		for _, inst in rig:QueryDescendants("AnimationConstraint") do
+			onJointAdded(inst)
 		end
-	end))
-	
+
+		table_insert(self._connections, rig.DescendantAdded:Connect(function(inst)
+			if inst:IsA("Motor6D") or inst:IsA("AnimationConstraint") then
+				onJointAdded(inst)
+			end
+		end))
+		table_insert(self._connections, rig.DescendantRemoving:Connect(function(inst)
+			if inst:IsA("Motor6D") or inst:IsA("AnimationConstraint") then
+				onJointRemoving(inst)
+			end
+		end))
+	end
+
+	-- OOP / manually registered joints, e.g. config.Joints = { [{"Torso", "Head"}] = MyJointObject }
+	-- MyJointObject just needs a settable `.Transform` property, same contract as Motor6D/AnimationConstraint.
+	-- These are registered after the rig scan, so they win on Part1-name collisions with real rig joints.
+	-- This is also the only source of joints when config.Rig isn't a real Instance (fake/OOP characters).
+	if joints then
+		for key, jointObject in next, joints do
+			local part1Name = key[2]
+			if part1Name then
+				registerMotor(part1Name, jointObject)
+			end
+		end
+	end
+
 	self._lastClock = osclock()
-	self._preanimationConnection = PreAnimation:Connect(function(dt)
+	self._preanimationConnection = PreAnimation:Connect(function()
 		local now = osclock()
 		local dt = now - self._lastClock
 		self._lastClock = now
 		self:_step(dt)
 	end)
 
-	Animators[rig] = self
+	if isRealRig then
+		Animators[rig] = self
+	end
+
 	return self
 end
 
@@ -2063,6 +2092,8 @@ Animator.Destroy = @native function(self)
 	table_clear(self._jointTrackers)
 	table_clear(self._connections)
 	table_clear(self._motorByPart1)
+	table_clear(self._motorUsesTransform)
+	table_clear(self._motorRestC0)
 
 	table_clear(self)
 	setmetatable(self, nil)
