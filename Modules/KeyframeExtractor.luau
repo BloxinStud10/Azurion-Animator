@@ -8,8 +8,7 @@ const table_insert = table.insert
 const table_clear = table.clear
 const table_unpack = table.unpack
 const table_sort = table.sort
-
-const AnimationDatas = {}
+const new = Instance.new
 
 const GetValueFromCurve = function(Curve, Time)
 	if not Curve then
@@ -23,7 +22,10 @@ const GetValueFromCurve = function(Curve, Time)
 	end
 end
 
-return function(ID, Sequence)
+const Extractor = {}
+const AnimationDatas = {}
+
+Extractor.ToData = function(ID, Sequence)
 	assert(Sequence, "Attempt to get Animation Data from invalid Animation")
 	
 	if next(AnimationDatas) then
@@ -181,3 +183,66 @@ return function(ID, Sequence)
 	
 	return AnimationData
 end
+
+Extractor.FromData = function(Data)
+	assert(Data, "Attempt to create Animation from invalid Data")
+	
+	local Sequence = new("KeyframeSequence")
+	Sequence.Name = Data.Name
+	
+	for _, KeyframeData in next, Data.Keyframes do
+		local Keyframe = new("Keyframe")
+		Keyframe.Time = KeyframeData.Time
+		Keyframe.Parent = Sequence
+		
+		local PoseLookup = {}
+		
+		for _, PoseData in next, KeyframeData.Poses do
+			local Part0Name = PoseData.Part0
+			local Part1Name = PoseData.Part1
+			
+			if Part0Name and not PoseLookup[Part0Name] then
+				local ParentPose = new("Pose")
+				ParentPose.Name = Part0Name
+				ParentPose.Parent = Keyframe
+				PoseLookup[Part0Name] = ParentPose
+			end
+			
+			local Pose = new("Pose")
+			Pose.Name = Part1Name
+			Pose.CFrame = PoseData.CFrame
+			
+			if PoseData.EasingStyle then
+				Pose.EasingStyle = Enum.PoseEasingStyle[PoseData.EasingStyle]
+			end
+			if PoseData.EasingDirection then
+				Pose.EasingDirection = Enum.PoseEasingDirection[PoseData.EasingDirection]
+			end
+			
+			if Part0Name and PoseLookup[Part0Name] then
+				Pose.Parent = PoseLookup[Part0Name]
+			else
+				Pose.Parent = Keyframe
+			end
+			
+			PoseLookup[Part1Name] = Pose
+		end
+		
+		if KeyframeData.Markers and next(KeyframeData.Markers) then
+			for _, MarkerData in next, KeyframeData.Markers do
+				local Marker = new("KeyframeMarker")
+				Marker.Name = MarkerData.Name
+				Marker.Value = MarkerData.Value
+				Marker.Parent = Keyframe
+			end
+		end
+	end
+	
+	return Sequence
+end
+
+Extractor.Clear = function()
+	table_clear(AnimationDatas)
+end
+
+return Extractor
