@@ -2033,10 +2033,6 @@ function Animator.new(config)
 		end))
 	end
 
-	-- OOP / manually registered joints, e.g. config.Joints = { [{"Torso", "Head"}] = MyJointObject }
-	-- MyJointObject just needs a settable `.Transform` property, same contract as Motor6D/AnimationConstraint.
-	-- These are registered after the rig scan, so they win on Part1-name collisions with real rig joints.
-	-- This is also the only source of joints when config.Rig isn't a real Instance (fake/OOP characters).
 	if joints then
 		for key, jointObject in next, joints do
 			local part1Name = key[2]
