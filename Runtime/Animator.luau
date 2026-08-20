@@ -49,7 +49,6 @@ const buffer_readu8 = buffer.readu8
 const buffer_readu32 = buffer.readu32
 const buffer_readf64 = buffer.readf64
 const buffer_readstring = buffer.readstring
-const bit32_bxor = bit32.bxor
 
 const CFrame_new = CFrame.new
 const CFrame_identity = CFrame.identity
@@ -60,15 +59,6 @@ const RunService = game:GetService("RunService")
 const PreAnimation = RunService.PreAnimation
 
 const Lerp = CFrame_identity.Lerp
-
-const HashString = @native function(s)
-	local hash = 2166136261
-	for i = 1, #s do
-		hash = bit32_bxor(hash, string_byte(s, i))
-		hash = (hash * 16777619) % 4294967296
-	end
-	return hash
-end
 
 export type Signal<Parameters...> = {
 	Connect: typeof(
