@@ -9,11 +9,7 @@ const table_clear = table.clear
 const table_unpack = table.unpack
 const table_sort = table.sort
 
-const PoseEasingStyle = Enum.PoseEasingStyle
-const PoseEasingDirection = Enum.PoseEasingDirection
-const AnimationPriority = Enum.AnimationPriority
-
-local AnimationDatas = {}
+const AnimationDatas = {}
 
 const GetValueFromCurve = function(Curve, Time)
 	if not Curve then
@@ -27,41 +23,22 @@ const GetValueFromCurve = function(Curve, Time)
 	end
 end
 
-const GetPriorityValue = @native function(priority)
-	if type(priority) == "number" then
-		return priority
-	end
-	if typeof(priority) == "EnumItem" and priority.EnumType == AnimationPriority then
-		return priority.Value
-	end
-	return 0
-end
-
-const GetAncestorKeyframe = function(Instance)
-	local Current = Instance.Parent
-	while Current and not Current:IsA("Keyframe") do
-		Current = Current.Parent
-	end
-	return Current
-end
-
-return function(Name, Sequence, IncludeMetatable)
+return function(ID, Sequence)
 	assert(Sequence, "Attempt to get Animation Data from invalid Animation")
 	
 	if next(AnimationDatas) then
 		for _, Data in next, AnimationDatas do
-			if Data.Name == Name then
+			if Data.ID == ID then
 				return Data
 			end
 		end
 	end
 	
 	AnimationData = {
-		Name = Name,
-		Loop = Sequence.Loop,
-		Priority = GetPriorityValue(Sequence.Priority),
+		Name = Sequence.Name,
 		Length = 0,
-		Keyframes = {}
+		Keyframes = {},
+		Metadata = {}
 	}
 	table_insert(AnimationDatas, AnimationData)
 	
@@ -92,7 +69,7 @@ return function(Name, Sequence, IncludeMetatable)
 		end
 		
 		for _, Pose in next, Sequence:QueryDescendants("Pose") do
-			local KeyframeInstance = GetAncestorKeyframe(Pose)
+			local KeyframeInstance = Pose:FindFirstAncestorOfClass("Keyframe")
 			local KeyframeData = KeyframeLookup[KeyframeInstance]
 			if not KeyframeData then
 				continue
@@ -104,9 +81,18 @@ return function(Name, Sequence, IncludeMetatable)
 			
 			local EasingStyle, EasingDirection = Pose.EasingStyle, Pose.EasingDirection
 			
-			local PoseTable = {Part0Name, Part1Name, Pose.CFrame}
-			if EasingStyle ~= "Linear" then PoseTable[4] = EasingStyle.Name end
-			if EasingDirection ~= "In" then PoseTable[5] = EasingDirection.Name end
+			local PoseTable = {
+				Part0 = Part0Name,
+				Part1 = Part1Name,
+				CFrame = Pose.CFrame
+			}
+			
+			if EasingStyle.Name == "Linear" then
+				PoseTable.EasingStyle = EasingStyle.Name
+			end
+			if EasingDirection == "In" then
+				PoseTable.EasingDirection = EasingDirection.Name
+			end
 			
 			table_insert(KeyframeData.Poses, PoseTable)
 		end
@@ -116,16 +102,12 @@ return function(Name, Sequence, IncludeMetatable)
 		end)
 		
 		AnimationData.Length = MaxTime
-		if IncludeMetatable then
-			local Metadata = {}
-			lMetadata.KeyframeCount = #AnimationData.Keyframes
-			Metadata.TotalPoses = 0
-			for _, Keyframe in next, AnimationData.Keyframes do
-				if Keyframe.Poses and next(Keyframe.Poses) then
-					Metadata.TotalPoses += #Keyframe.Poses
-				end
+		AnimationData.Metadata.KeyframeCount = #AnimationData.Keyframes
+		AnimationData.Metadata.TotalPoses = 0
+		for _, Keyframe in next, AnimationData.Keyframes do
+			if Keyframe.Poses and next(Keyframe.Poses) then
+				AnimationData.Metadata.TotalPoses += #Keyframe.Poses
 			end
-			AnimationData.Metadata = Metadata
 		end
 	elseif Sequence:IsA("CurveAnimation") then
 		local MaxTime = 0
@@ -163,7 +145,12 @@ return function(Name, Sequence, IncludeMetatable)
 				local Part1Name = Track.Name
 				local Part0Name = (ParentTrack ~= Sequence and ParentTrack.Name) or nil
 				
-				local PoseTable = {Part0Name, Part1Name, Rotation + Position}
+				local PoseData = {
+					Part0 = Part0Name,
+					Part1 = Part1Name,
+					CFrame = Rotation + Position
+				}
+				
 				table_insert(Keyframe.Poses, PoseData)
 
 				if Time > MaxTime then
@@ -184,14 +171,11 @@ return function(Name, Sequence, IncludeMetatable)
 		end
 
 		AnimationData.Length = MaxTime
-		if IncludeMetatable then
-			local Metatable = {}
-			AnimationData.Metadata.KeyframeCount = #AnimationData.Keyframes
-			AnimationData.Metadata.TotalPoses = 0
-			for _, Keyframe in next, AnimationData.Keyframes do
-				AnimationData.Metadata.TotalPoses += #Keyframe.Poses
-			end
-			AnimationData.Metadata = Metatable
+		AnimationData.Metadata.KeyframeCount = #AnimationData.Keyframes
+		AnimationData.Metadata.TotalPoses = 0
+
+		for _, Keyframe in next, AnimationData.Keyframes do
+			AnimationData.Metadata.TotalPoses += #Keyframe.Poses
 		end
 	end
 	
