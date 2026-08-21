@@ -84,16 +84,16 @@ Extractor.ToData = function(ID, Sequence)
 			local EasingStyle, EasingDirection = Pose.EasingStyle, Pose.EasingDirection
 			
 			local PoseTable = {
-				Part0 = Part0Name,
-				Part1 = Part1Name,
-				CFrame = Pose.CFrame
+				Part0Name,
+				Part1Name,
+				Pose.CFrame
 			}
 			
 			if EasingStyle.Name == "Linear" then
-				PoseTable.EasingStyle = EasingStyle.Name
+				PoseTable[4] = EasingStyle.Name
 			end
 			if EasingDirection == "In" then
-				PoseTable.EasingDirection = EasingDirection.Name
+				PoseTable[5] = EasingDirection.Name
 			end
 			
 			table_insert(KeyframeData.Poses, PoseTable)
@@ -148,9 +148,9 @@ Extractor.ToData = function(ID, Sequence)
 				local Part0Name = (ParentTrack ~= Sequence and ParentTrack.Name) or nil
 				
 				local PoseData = {
-					Part0 = Part0Name,
-					Part1 = Part1Name,
-					CFrame = Rotation + Position
+					Part0Name,
+					Part1Name,
+					Rotation + Position
 				}
 				
 				table_insert(Keyframe.Poses, PoseData)
@@ -198,8 +198,8 @@ Extractor.FromData = function(Data)
 		local PoseLookup = {}
 		
 		for _, PoseData in next, KeyframeData.Poses do
-			local Part0Name = PoseData.Part0
-			local Part1Name = PoseData.Part1
+			local Part0Name = PoseData[1]
+			local Part1Name = PoseData[2]
 			
 			if Part0Name and not PoseLookup[Part0Name] then
 				local ParentPose = new("Pose")
@@ -210,13 +210,13 @@ Extractor.FromData = function(Data)
 			
 			local Pose = new("Pose")
 			Pose.Name = Part1Name
-			Pose.CFrame = PoseData.CFrame
+			Pose.CFrame = PoseData[3]
 			
-			if PoseData.EasingStyle then
-				Pose.EasingStyle = Enum.PoseEasingStyle[PoseData.EasingStyle]
+			if PoseData[4] then
+				Pose.EasingStyle = Enum.PoseEasingStyle[PoseData[4]]
 			end
-			if PoseData.EasingDirection then
-				Pose.EasingDirection = Enum.PoseEasingDirection[PoseData.EasingDirection]
+			if PoseData[5] then
+				Pose.EasingDirection = Enum.PoseEasingDirection[PoseData[5]]
 			end
 			
 			if Part0Name and PoseLookup[Part0Name] then
